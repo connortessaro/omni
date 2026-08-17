@@ -1,6 +1,7 @@
 import { Button, Header, Input, Selection, TextInput } from "@/components";
 import { UseSettingsReturn } from "@/types";
 import curl2Json, { ResultJSON } from "@bany/curl-to-json";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { KeyIcon, TrashIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -12,6 +13,33 @@ export const Providers = ({
 }: UseSettingsReturn) => {
   const [localSelectedProvider, setLocalSelectedProvider] =
     useState<ResultJSON | null>(null);
+  const [detectedOllamaModels, setDetectedOllamaModels] = useState<string[]>([]);
+  const [isDetectingOllama, setIsDetectingOllama] = useState(false);
+  const [detectError, setDetectError] = useState<string | null>(null);
+
+  const handleDetectOllama = async () => {
+    setIsDetectingOllama(true);
+    setDetectError(null);
+    try {
+      const res = await tauriFetch("http://localhost:11434/api/tags");
+      if (!res.ok) throw new Error(`Ollama returned status ${res.status}`);
+      const data: any = await res.json();
+      const models = (data?.models || []).map((m: any) => m.name);
+      if (models.length === 0) {
+        setDetectError(
+          "No models found in Ollama. Pull one in terminal: 'ollama pull llama3.2'"
+        );
+      } else {
+        setDetectedOllamaModels(models);
+      }
+    } catch {
+      setDetectError(
+        "Could not connect to Ollama at http://localhost:11434. Is Ollama running?"
+      );
+    } finally {
+      setIsDetectingOllama(false);
+    }
+  };
 
   useEffect(() => {
     if (selectedAIProvider?.provider) {
@@ -220,6 +248,59 @@ export const Providers = ({
                     });
                   }}
                 />
+
+                {selectedAIProvider?.provider === "ollama" &&
+                  variable?.key?.toLowerCase().includes("model") && (
+                    <div className="pt-2">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          className="text-xs h-7 cursor-pointer"
+                          disabled={isDetectingOllama}
+                          onClick={handleDetectOllama}
+                        >
+                          {isDetectingOllama
+                            ? "Detecting..."
+                            : "⚡ Detect Local Models"}
+                        </Button>
+                      </div>
+
+                      {detectError && (
+                        <p className="text-[11px] text-destructive mt-1.5">
+                          {detectError}
+                        </p>
+                      )}
+
+                      {detectedOllamaModels.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {detectedOllamaModels.map((modelName) => (
+                            <button
+                              key={modelName}
+                              type="button"
+                              onClick={() => {
+                                onSetSelectedAIProvider({
+                                  ...selectedAIProvider,
+                                  variables: {
+                                    ...selectedAIProvider.variables,
+                                    [variable.key]: modelName,
+                                  },
+                                });
+                              }}
+                              className={`text-xs px-2 py-0.5 rounded-full border transition cursor-pointer ${
+                                getVariableValue() === modelName
+                                  ? "bg-primary text-primary-foreground border-primary font-medium"
+                                  : "bg-muted/50 hover:bg-muted text-muted-foreground border-input/50"
+                              }`}
+                            >
+                              {modelName}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
               </div>
             );
           })}

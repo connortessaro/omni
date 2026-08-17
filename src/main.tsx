@@ -9,6 +9,27 @@ import AppRoutes from "./routes";
 const currentWindow = getCurrentWindow();
 const windowLabel = currentWindow.label;
 
+// Enable robust copy/paste keyboard shortcuts across all windows
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      const isModifier = isMac ? e.metaKey : e.ctrlKey;
+      if (!isModifier) return;
+
+      const key = e.key.toLowerCase();
+      if (key === "c") {
+        const selection = window.getSelection()?.toString();
+        if (selection) {
+          navigator.clipboard.writeText(selection).catch(() => {});
+        }
+      }
+    },
+    { capture: true }
+  );
+}
+
 // Render different components based on window label
 if (windowLabel.startsWith("capture-overlay-")) {
   const monitorIndex = parseInt(windowLabel.split("-")[2], 10) || 0;

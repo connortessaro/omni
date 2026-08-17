@@ -37,7 +37,7 @@ pub struct LicenseState {
 impl Default for LicenseState {
     fn default() -> Self {
         LicenseState {
-            has_active_license: AtomicBool::new(false),
+            has_active_license: AtomicBool::new(true),
         }
     }
 }
@@ -124,16 +124,6 @@ pub fn handle_shortcut_action<R: Runtime>(app: &AppHandle<R>, action_id: &str) {
 }
 
 pub fn start_move_window<R: Runtime>(app: &AppHandle<R>, direction: &str) {
-    {
-        let license_state = app.state::<LicenseState>();
-        if !license_state.is_active() {
-            eprintln!(
-                "Ignoring move_window start for direction '{}' - license inactive",
-                direction
-            );
-            return;
-        }
-    }
 
     let state = app.state::<MoveWindowState>();
     let mut tasks = match state.tasks.lock() {

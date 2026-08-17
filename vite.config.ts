@@ -34,4 +34,27 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom", "react-router-dom"],
+          markdown: [
+            "shiki",
+            "rehype-katex",
+            "remark-gfm",
+            "remark-math",
+            "streamdown",
+          ],
+          ui: [
+            "lucide-react",
+            "class-variance-authority",
+            "clsx",
+            "tailwind-merge",
+          ],
+        },
+      },
+    },
+  },
 }));

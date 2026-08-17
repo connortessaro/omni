@@ -1,24 +1,14 @@
 [package]
-name = "pluely"
+name = "omni"
 version = "0.1.9"
-description = "The Open Source Alternative to Cluely - A lightning-fast, privacy-first AI assistant that works seamlessly during meetings, interviews, and conversations without anyone knowing."
-authors = ["Srikanth Nani <mail@srikanthnani.com>"]
-license = "GPL-3.0"
-repository = "https://github.com/iamsrikanthnani/pluely"
-homepage = "https://github.com/iamsrikanthnani/pluely"
-documentation = "https://github.com/iamsrikanthnani/pluely/wiki"
-readme = "../README.md"
-keywords = ["ai-assistant", "tauri", "desktop-app", "privacy-first", "meeting-assistant"]
-categories = ["gui", "multimedia", "accessibility", "science", "development-tools"]
+description = "Omni - Fast, privacy-first AI desktop assistant."
+authors = ["Connor Tessaro"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "pluely_lib"
+name = "omni_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -55,7 +45,6 @@ tauri-plugin-machine-uid = "0.1.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-macos-permissions = "2"
-cidre = "0.11.3"
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
 
 [target.'cfg(target_os = "windows")'.dependencies]

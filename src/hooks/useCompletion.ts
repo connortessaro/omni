@@ -77,6 +77,15 @@ export const useCompletion = () => {
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
   const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
   const [keepEngaged, setKeepEngaged] = useState(false);
+  const [promptHistory, setPromptHistory] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("pluely_prompt_history");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+  const promptHistoryIndexRef = useRef<number>(-1);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const isProcessingScreenshotRef = useRef(false);
   const screenshotConfigRef = useRef(screenshotConfiguration);
@@ -135,11 +144,53 @@ export const useCompletion = () => {
 
   const submit = useCallback(
     async (speechText?: string) => {
-      const input = speechText || state.input;
+      const rawInput = speechText || state.input;
 
-      if (!input.trim()) {
+      if (!rawInput.trim()) {
         return;
       }
+
+      const trimmedInput = rawInput.trim();
+
+      // Handle /clear slash command
+      if (trimmedInput === "/clear") {
+        setState((prev) => ({
+          ...prev,
+          input: "",
+          response: "",
+          error: null,
+          attachedFiles: [],
+          currentConversationId: null,
+          conversationHistory: [],
+        }));
+        return;
+      }
+
+      // Expand slash commands
+      let input = trimmedInput;
+      if (trimmedInput.startsWith("/fix ")) {
+        input = `Please fix grammar, spelling, clarity, and tone for the following text:\n\n${trimmedInput.slice(5).trim()}`;
+      } else if (trimmedInput.startsWith("/explain ")) {
+        input = `Please explain the following concept simply and clearly with practical examples:\n\n${trimmedInput.slice(9).trim()}`;
+      } else if (trimmedInput.startsWith("/code ")) {
+        input = `Please write clean, production-ready, well-commented code for:\n\n${trimmedInput.slice(6).trim()}`;
+      } else if (trimmedInput.startsWith("/summarize ")) {
+        input = `Please summarize the following text into concise bullet points and key takeaways:\n\n${trimmedInput.slice(11).trim()}`;
+      } else if (trimmedInput.startsWith("/regex ")) {
+        input = `Please explain or construct a regular expression pattern for:\n\n${trimmedInput.slice(7).trim()}`;
+      }
+
+      setPromptHistory((prev) => {
+        const updated = [
+          trimmedInput,
+          ...prev.filter((p) => p !== trimmedInput),
+        ].slice(0, 50);
+        try {
+          localStorage.setItem("pluely_prompt_history", JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+      promptHistoryIndexRef.current = -1;
 
       if (speechText) {
         setState((prev) => ({
@@ -719,6 +770,29 @@ export const useCompletion = () => {
       e.preventDefault();
       if (!state.isLoading && state.input.trim()) {
         submit();
+      }
+    } else if (e.key === "ArrowUp") {
+      if (!state.response && promptHistory.length > 0) {
+        e.preventDefault();
+        const nextIndex = Math.min(
+          promptHistoryIndexRef.current + 1,
+          promptHistory.length - 1
+        );
+        promptHistoryIndexRef.current = nextIndex;
+        setInput(promptHistory[nextIndex]);
+      }
+    } else if (e.key === "ArrowDown") {
+      if (!state.response) {
+        if (promptHistoryIndexRef.current > 0) {
+          e.preventDefault();
+          const nextIndex = promptHistoryIndexRef.current - 1;
+          promptHistoryIndexRef.current = nextIndex;
+          setInput(promptHistory[nextIndex]);
+        } else if (promptHistoryIndexRef.current === 0) {
+          e.preventDefault();
+          promptHistoryIndexRef.current = -1;
+          setInput("");
+        }
       }
     }
   };

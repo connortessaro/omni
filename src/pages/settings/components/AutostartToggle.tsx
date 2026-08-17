@@ -18,7 +18,7 @@ export const AutostartToggle = ({ className }: AutostartToggleProps) => {
     <div id="autostart" className={`space-y-2 ${className}`}>
       <Header
         title="Launch on Startup"
-        description="Automatically open Pluely when your system starts"
+        description="Automatically open Omni when your system starts"
         isMainTitle
       />
       <div className="flex items-center justify-between">
@@ -27,8 +27,8 @@ export const AutostartToggle = ({ className }: AutostartToggleProps) => {
             <Label className="text-sm font-medium">Open on Start</Label>
             <p className="text-xs text-muted-foreground mt-1">
               {isEnabled
-                ? "Pluely will launch automatically on system startup"
-                : "Pluely will not launch automatically"}
+                ? "Omni will launch automatically on system startup"
+                : "Omni will not launch automatically"}
             </p>
           </div>
         </div>

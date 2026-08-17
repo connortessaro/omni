@@ -63,14 +63,14 @@ const Dashboard = () => {
               )
               .map((dateKey) => (
                 <div key={dateKey} className="flex flex-col gap-3">
-                  <p className="text-xs text-muted-foreground select-none font-medium">
+                  <p className="text-xs text-muted-foreground font-medium">
                     {moment(dateKey).format("ddd, MMM D")}
                   </p>
                   <div className="grid grid-cols-1 gap-3">
                     {groupedConversations[dateKey].map((doc) => (
                       <Card
                         key={doc.id}
-                        className="shadow-none select-none p-4 gap-0 group relative transition-all !bg-black/5 dark:!bg-white/5 hover:!border-primary/50 cursor-pointer"
+                        className="shadow-none p-4 gap-0 group relative transition-all !bg-black/5 dark:!bg-white/5 hover:!border-primary/50 cursor-pointer"
                         onClick={() => navigate(`/chats/view/${doc.id}`)}
                       >
                         <div className="flex items-center justify-between">

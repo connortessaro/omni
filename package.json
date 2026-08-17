@@ -1,38 +1,9 @@
 {
-  "name": "pluely",
-  "private": false,
+  "name": "omni",
+  "private": true,
   "version": "0.1.9",
-  "description": "The Open Source Alternative to Cluely - A lightning-fast, privacy-first AI assistant that works seamlessly during meetings, interviews, and conversations without anyone knowing.",
-  "author": {
-    "name": "Srikanth Nani",
-    "email": "mail@srikanthnani.com",
-    "url": "https://www.srikanthnani.com"
-  },
-  "license": "GPL-3.0",
-  "homepage": "https://github.com/iamsrikanthnani/pluely#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/iamsrikanthnani/pluely.git"
-  },
-  "bugs": {
-    "url": "https://github.com/iamsrikanthnani/pluely/issues"
-  },
-  "keywords": [
-    "ai-assistant",
-    "tauri",
-    "desktop-app",
-    "privacy-first",
-    "open-source",
-    "meeting-assistant",
-    "speech-to-text",
-    "llm",
-    "chatgpt",
-    "claude",
-    "cluely-alternative",
-    "typescript",
-    "react",
-    "rust"
-  ],
+  "description": "Omni - Fast, privacy-first AI desktop assistant.",
+  "author": "Connor Tessaro",
   "type": "module",
   "scripts": {
     "dev": "vite",
