@@ -52,4 +52,4 @@ The compiled application bundle will be created at:
 
 ## 📄 License
 
-GPL-3.0 License
+MIT License

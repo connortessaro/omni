@@ -4,6 +4,7 @@
   "version": "0.1.9",
   "description": "Omni - Fast, privacy-first AI desktop assistant.",
   "author": "Connor Tessaro",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

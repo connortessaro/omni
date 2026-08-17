@@ -3,6 +3,7 @@ name = "omni"
 version = "0.1.9"
 description = "Omni - Fast, privacy-first AI desktop assistant."
 authors = ["Connor Tessaro"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
