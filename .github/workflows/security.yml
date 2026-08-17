@@ -1,0 +1,30 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: "0 0 * * 1" # Runs weekly every Monday at 00:00 UTC
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Security & Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: NPM Security Audit
+        run: npm audit --audit-level=high || true
+
+      - name: Rust Security Audit
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          manifest-path: src-tauri/Cargo.toml
