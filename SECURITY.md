@@ -1,11 +1,11 @@
 # Security Policy
 
-If you believe you have found a security vulnerability, we encourage you to let us know right away.
+If you believe you have found a security vulnerability in Omni, please report it promptly.
 
-We will investigate all legitimate reports and do our best to quickly fix the problem.
+### Reporting a Vulnerability
 
-Our preference is that you make use of GitHub's private vulnerability reporting feature to disclose potential security vulnerabilities in our Open Source Software.
+Please make use of GitHub's private vulnerability reporting feature:
+1. Visit the [Security Tab](https://github.com/connortessaro/omni/security) of the repository.
+2. Click **"Report a vulnerability"** to submit an advisory privately.
 
-To do this, please visit the [Security tab](https://github.com/iamsrikanthnani/pluely/security) of the repository and click the **"Report a vulnerability"** button.
-
-For urgent matters, you can also contact us at [support@pluely.com](mailto:support@pluely.com).
+All legitimate reports are reviewed promptly and addressed with highest priority.
