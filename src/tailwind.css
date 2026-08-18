@@ -213,19 +213,19 @@ body {
   white-space: pre-wrap !important;
 }
 
-/* Omni UI/UX Polish Utilities */
-.omni-glass {
+/* Omni Tailwind v4 Utilities */
+@utility omni-glass {
   background: rgba(15, 23, 42, 0.65);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.omni-glow {
+@utility omni-glow {
   box-shadow: 0 0 20px -5px rgba(0, 240, 255, 0.25);
 }
 
-.omni-badge-pulse {
+@utility omni-badge-pulse {
   animation: omni-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
@@ -237,4 +237,5 @@ body {
     opacity: 0.6;
   }
 }
+
 
