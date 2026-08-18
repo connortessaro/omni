@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./assets/omni-icon.png" width="120" height="120" alt="Omni Icon" style="border-radius: 26px;" />
+
 # Omni ⚡
 
 ### Fast, privacy-first AI desktop companion built with Tauri v2, Rust & React.
