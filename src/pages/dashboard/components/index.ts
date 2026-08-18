@@ -1,2 +1,3 @@
-export * from "./PluelyApiSetup";
+export * from "./OmniApiSetup";
 export * from "./Usage";
+

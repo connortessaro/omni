@@ -11,7 +11,7 @@ import {
 } from "@/config";
 import {
   safeLocalStorage,
-  shouldUsePluelyAPI,
+  shouldUseOmniAPI,
   generateConversationTitle,
   saveConversation,
   CONVERSATION_SAVE_DEBOUNCE_MS,
@@ -235,18 +235,17 @@ export function useSystemAudio() {
             }
             const audioBlob = new Blob([bytes], { type: "audio/wav" });
 
-            const usePluelyAPI = await shouldUsePluelyAPI();
-            if (!selectedSttProvider.provider && !usePluelyAPI) {
-              setError("No speech provider selected.");
+            const useOmniAPI = await shouldUseOmniAPI();
+            if (!selectedSttProvider.provider && !useOmniAPI) {
+              console.warn("No speech provider selected");
               return;
             }
 
             const providerConfig = allSttProviders.find(
               (p) => p.id === selectedSttProvider.provider
             );
-
-            if (!providerConfig && !usePluelyAPI) {
-              setError("Speech provider config not found.");
+            if (!providerConfig && !useOmniAPI) {
+              console.warn("Speech provider configuration not found");
               return;
             }
 
@@ -254,7 +253,7 @@ export function useSystemAudio() {
 
             // Add timeout wrapper for STT request (30 seconds)
             const sttPromise = fetchSTT({
-              provider: providerConfig,
+              provider: useOmniAPI ? undefined : providerConfig,
               selectedProvider: selectedSttProvider,
               audio: audioBlob,
             });
@@ -487,8 +486,8 @@ export function useSystemAudio() {
 
         let fullResponse = "";
 
-        const usePluelyAPI = await shouldUsePluelyAPI();
-        if (!selectedAIProvider.provider && !usePluelyAPI) {
+        const useOmniAPI = await shouldUseOmniAPI();
+        if (!selectedAIProvider.provider && !useOmniAPI) {
           setError("No AI provider selected.");
           return;
         }
@@ -496,14 +495,14 @@ export function useSystemAudio() {
         const provider = allAiProviders.find(
           (p) => p.id === selectedAIProvider.provider
         );
-        if (!provider && !usePluelyAPI) {
+        if (!provider && !useOmniAPI) {
           setError("AI provider config not found.");
           return;
         }
 
         try {
           for await (const chunk of fetchAIResponse({
-            provider: usePluelyAPI ? undefined : provider,
+            provider: useOmniAPI ? undefined : provider,
             selectedProvider: selectedAIProvider,
             systemPrompt: prompt,
             history: previousMessages,

@@ -21,15 +21,15 @@ import { safeLocalStorage } from "@/lib";
 import { STORAGE_KEYS } from "@/config";
 import moment from "moment";
 
-interface PluelyPrompt {
+interface OmniPrompt {
   title: string;
   prompt: string;
   modelId: string;
   modelName: string;
 }
 
-interface PluelyPromptsResponse {
-  prompts: PluelyPrompt[];
+interface OmniPromptsResponse {
+  prompts: OmniPrompt[];
   total: number;
   last_updated?: string;
 }
@@ -44,26 +44,27 @@ interface Model {
   isAvailable: boolean;
 }
 
-const SELECTED_PLUELY_MODEL_STORAGE_KEY = "selected_pluely_model";
+const SELECTED_OMNI_MODEL_STORAGE_KEY = "selected_omni_model";
+const SELECTED_OMNI_PROMPT_STORAGE_KEY = "selected_omni_prompt";
 const SELECTED_PLUELY_PROMPT_STORAGE_KEY = "selected_pluely_prompt";
 
-export const PluelyPrompts = () => {
+export const OmniPrompts = () => {
   const {
     setSystemPrompt,
     hasActiveLicense,
     setSupportsImages,
     pluelyApiEnabled,
   } = useApp();
-  const [prompts, setPrompts] = useState<PluelyPrompt[]>([]);
+  const [prompts, setPrompts] = useState<OmniPrompt[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [selectedPluelyPrompt, setSelectedPluelyPrompt] =
-    useState<PluelyPrompt | null>(() => {
+  const [selectedOmniPrompt, setSelectedOmniPrompt] =
+    useState<OmniPrompt | null>(() => {
       // Load selected prompt from local storage on initial render
-      const stored = safeLocalStorage.getItem(
-        SELECTED_PLUELY_PROMPT_STORAGE_KEY
-      );
+      const stored =
+        safeLocalStorage.getItem(SELECTED_OMNI_PROMPT_STORAGE_KEY) ||
+        safeLocalStorage.getItem(SELECTED_PLUELY_PROMPT_STORAGE_KEY);
       if (stored) {
         try {
           return JSON.parse(stored);
@@ -79,20 +80,20 @@ export const PluelyPrompts = () => {
   useEffect(() => {
     if (!fetchInitiated.current) {
       fetchInitiated.current = true;
-      fetchPluelyPrompts();
+      fetchOmniPrompts();
       fetchModels();
     }
   }, []);
 
-  // Watch for changes in user's selected prompt and clear Pluely selection if needed
+  // Watch for changes in user's selected prompt and clear Omni selection if needed
   useEffect(() => {
     const checkUserPromptSelection = () => {
       const userSelectedPromptId = safeLocalStorage.getItem(
         STORAGE_KEYS.SELECTED_SYSTEM_PROMPT_ID
       );
-      // If user has selected one of their own prompts, clear Pluely prompt selection
+      // If user has selected one of their own prompts, clear Omni prompt selection
       if (userSelectedPromptId) {
-        setSelectedPluelyPrompt(null);
+        setSelectedOmniPrompt(null);
       }
     };
 
@@ -110,19 +111,19 @@ export const PluelyPrompts = () => {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  const fetchPluelyPrompts = async () => {
+  const fetchOmniPrompts = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await invoke<PluelyPromptsResponse>("fetch_prompts");
+      const response = await invoke<OmniPromptsResponse>("fetch_prompts");
       setPrompts(response.prompts);
       if (response.last_updated) {
         setLastUpdated(response.last_updated);
       }
     } catch (err) {
-      console.error("Failed to fetch Pluely prompts:", err);
+      console.error("Failed to fetch Omni prompts:", err);
       setError(
-        typeof err === "string" ? err : "Failed to fetch Pluely prompts"
+        typeof err === "string" ? err : "Failed to fetch preset prompts"
       );
     } finally {
       setIsLoading(false);
@@ -138,7 +139,7 @@ export const PluelyPrompts = () => {
     }
   };
 
-  const handleSelectPluelyPrompt = async (prompt: PluelyPrompt) => {
+  const handleSelectOmniPrompt = async (prompt: OmniPrompt) => {
     // Check if user has active license
     if (!hasActiveLicense) {
       return;
@@ -147,7 +148,7 @@ export const PluelyPrompts = () => {
     try {
       // Set the system prompt
       setSystemPrompt(prompt.prompt);
-      setSelectedPluelyPrompt(prompt);
+      setSelectedOmniPrompt(prompt);
 
       // Clear the user's selected prompt ID from local storage
       // This ensures the user prompt cards don't show as selected
@@ -156,9 +157,9 @@ export const PluelyPrompts = () => {
       // Save the system prompt to local storage
       safeLocalStorage.setItem(STORAGE_KEYS.SYSTEM_PROMPT, prompt.prompt);
 
-      // Save the selected Pluely prompt to local storage for persistence
+      // Save the selected Omni prompt to local storage for persistence
       safeLocalStorage.setItem(
-        SELECTED_PLUELY_PROMPT_STORAGE_KEY,
+        SELECTED_OMNI_PROMPT_STORAGE_KEY,
         JSON.stringify(prompt)
       );
 
@@ -178,25 +179,25 @@ export const PluelyPrompts = () => {
         await invoke("secure_storage_save", {
           items: [
             {
-              key: SELECTED_PLUELY_MODEL_STORAGE_KEY,
+              key: SELECTED_OMNI_MODEL_STORAGE_KEY,
               value: JSON.stringify(matchingModel),
             },
           ],
         });
       }
     } catch (error) {
-      console.error("Failed to select Pluely prompt:", error);
+      console.error("Failed to select Omni prompt:", error);
     }
   };
 
-  const handleCardClick = (prompt: PluelyPrompt) => {
-    handleSelectPluelyPrompt(prompt);
+  const handleCardClick = (prompt: OmniPrompt) => {
+    handleSelectOmniPrompt(prompt);
   };
 
-  const isPromptSelected = (prompt: PluelyPrompt) => {
+  const isPromptSelected = (prompt: OmniPrompt) => {
     return (
-      selectedPluelyPrompt?.title === prompt.title &&
-      selectedPluelyPrompt?.modelId === prompt.modelId
+      selectedOmniPrompt?.title === prompt.title &&
+      selectedOmniPrompt?.modelId === prompt.modelId
     );
   };
 
@@ -311,3 +312,6 @@ export const PluelyPrompts = () => {
     </div>
   );
 };
+
+export const PluelyPrompts = OmniPrompts;
+

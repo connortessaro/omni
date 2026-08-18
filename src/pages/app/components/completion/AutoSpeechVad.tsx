@@ -1,4 +1,4 @@
-import { fetchSTT } from "@/lib";
+import { fetchSTT, shouldUseOmniAPI } from "@/lib";
 import { UseCompletionReturn } from "@/types";
 import { useMicVAD } from "@ricky0123/vad-react";
 import { LoaderCircleIcon, MicIcon, MicOffIcon } from "lucide-react";
@@ -6,7 +6,6 @@ import { useState } from "react";
 import { Button } from "@/components";
 import { useApp } from "@/contexts";
 import { floatArrayToWav } from "@/lib/utils";
-import { shouldUsePluelyAPI } from "@/lib/functions/pluely.api";
 
 interface AutoSpeechVADProps {
   submit: UseCompletionReturn["submit"];
@@ -39,10 +38,10 @@ const AutoSpeechVADInternal = ({
         const audioBlob = floatArrayToWav(audio, 16000, "wav");
 
         let transcription: string;
-        const usePluelyAPI = await shouldUsePluelyAPI();
+        const useOmniAPI = await shouldUseOmniAPI();
 
         // Check if we have a configured speech provider
-        if (!selectedSttProvider.provider && !usePluelyAPI) {
+        if (!selectedSttProvider.provider && !useOmniAPI) {
           console.warn("No speech provider selected");
           setState((prev: any) => ({
             ...prev,
@@ -56,12 +55,12 @@ const AutoSpeechVADInternal = ({
           (p) => p.id === selectedSttProvider.provider
         );
 
-        if (!providerConfig && !usePluelyAPI) {
+        if (!providerConfig && !useOmniAPI) {
           console.warn("Selected speech provider configuration not found");
           setState((prev: any) => ({
             ...prev,
             error:
-              "Speech provider configuration not found. Please check your settings.",
+              "Selected speech provider not found. Please reconfigure in settings.",
           }));
           return;
         }
@@ -70,7 +69,7 @@ const AutoSpeechVADInternal = ({
 
         // Use the fetchSTT function for all providers
         transcription = await fetchSTT({
-          provider: usePluelyAPI ? undefined : providerConfig,
+          provider: useOmniAPI ? undefined : providerConfig,
           selectedProvider: selectedSttProvider,
           audio: audioBlob,
         });

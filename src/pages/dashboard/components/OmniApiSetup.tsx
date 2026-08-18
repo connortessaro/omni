@@ -33,6 +33,7 @@ interface ActivationResponse {
 interface StorageResult {
   license_key?: string;
   instance_id?: string;
+  selected_omni_model?: string;
   selected_pluely_model?: string;
 }
 
@@ -46,11 +47,12 @@ interface Model {
   isAvailable: boolean;
 }
 
-const LICENSE_KEY_STORAGE_KEY = "pluely_license_key";
-const INSTANCE_ID_STORAGE_KEY = "pluely_instance_id";
+const LICENSE_KEY_STORAGE_KEY = "omni_license_key";
+const INSTANCE_ID_STORAGE_KEY = "omni_instance_id";
+const SELECTED_OMNI_MODEL_STORAGE_KEY = "selected_omni_model";
 const SELECTED_PLUELY_MODEL_STORAGE_KEY = "selected_pluely_model";
 
-export const PluelyApiSetup = () => {
+export const OmniApiSetup = () => {
   const {
     pluelyApiEnabled,
     setPluelyApiEnabled,
@@ -120,9 +122,10 @@ export const PluelyApiSetup = () => {
         setMaskedLicenseKey(null);
       }
 
-      if (storage.selected_pluely_model) {
+      const rawStoredModel = storage.selected_omni_model || storage.selected_pluely_model;
+      if (rawStoredModel) {
         try {
-          const storedModel = JSON.parse(storage.selected_pluely_model);
+          const storedModel = JSON.parse(rawStoredModel);
           setSelectedModel(storedModel);
         } catch (e) {
           console.error("Failed to parse stored model:", e);
@@ -176,7 +179,7 @@ export const PluelyApiSetup = () => {
         setSuccess("License activated successfully!");
         setLicenseKey(""); // Clear the input
 
-        // Auto-enable Pluely API when license is activated
+        // Auto-enable Omni Cloud API when license is activated
         if (!response?.is_dev_license) {
           setPluelyApiEnabled(true);
         }
@@ -206,13 +209,14 @@ export const PluelyApiSetup = () => {
         keys: [
           LICENSE_KEY_STORAGE_KEY,
           INSTANCE_ID_STORAGE_KEY,
+          SELECTED_OMNI_MODEL_STORAGE_KEY,
           SELECTED_PLUELY_MODEL_STORAGE_KEY,
         ],
       });
 
       setSuccess("License removed successfully!");
 
-      // Disable Pluely API when license is removed
+      // Disable Omni API when license is removed
       setPluelyApiEnabled(false);
 
       await fetchModels();
@@ -241,7 +245,7 @@ export const PluelyApiSetup = () => {
       await invoke("secure_storage_save", {
         items: [
           {
-            key: SELECTED_PLUELY_MODEL_STORAGE_KEY,
+            key: SELECTED_OMNI_MODEL_STORAGE_KEY,
             value: JSON.stringify(model),
           },
         ],
@@ -495,3 +499,6 @@ export const PluelyApiSetup = () => {
     </div>
   );
 };
+
+export const PluelyApiSetup = OmniApiSetup;
+

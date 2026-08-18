@@ -174,7 +174,8 @@ export const useSystemPrompts = () => {
           STORAGE_KEYS.SELECTED_SYSTEM_PROMPT_ID,
           promptId.toString()
         );
-        // Clear any selected Pluely prompt when user selects their own prompt
+        // Clear preset prompt selection when user selects their own prompt
+        safeLocalStorage.removeItem("selected_omni_prompt");
         safeLocalStorage.removeItem("selected_pluely_prompt");
       }
     },

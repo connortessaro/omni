@@ -622,16 +622,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const setPluelyApiEnabled = async (enabled: boolean) => {
     setPluelyApiEnabledState(enabled);
+    safeLocalStorage.setItem(STORAGE_KEYS.OMNI_API_ENABLED, String(enabled));
     safeLocalStorage.setItem(STORAGE_KEYS.PLUELY_API_ENABLED, String(enabled));
 
     if (enabled) {
       try {
         const storage = await invoke<{
+          selected_omni_model?: string;
           selected_pluely_model?: string;
         }>("secure_storage_get");
 
-        if (storage.selected_pluely_model) {
-          const model = JSON.parse(storage.selected_pluely_model);
+        const rawModel = storage.selected_omni_model || storage.selected_pluely_model;
+        if (rawModel) {
+          const model = JSON.parse(rawModel);
           const hasImageSupport = model.modality?.includes("image") ?? false;
           setSupportsImages(hasImageSupport);
         } else {
@@ -639,7 +642,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setSupportsImages(false);
         }
       } catch (error) {
-        console.debug("Failed to check Pluely model image support:", error);
+        console.debug("Failed to check Omni model image support:", error);
         setSupportsImages(false);
       }
     } else {

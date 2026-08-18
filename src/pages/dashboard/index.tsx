@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { PluelyApiSetup, Usage } from "./components";
+import { OmniApiSetup, Usage } from "./components";
 import { PageLayout } from "@/layouts";
 import { useApp } from "@/contexts";
 
@@ -50,8 +50,8 @@ const Dashboard = () => {
       title="Dashboard"
       description="Manage models, API keys, and monitor usage."
     >
-      {/* Pluely API Setup */}
-      <PluelyApiSetup />
+      {/* Omni Cloud API Setup */}
+      <OmniApiSetup />
 
       <Usage
         loading={loadingActivity}

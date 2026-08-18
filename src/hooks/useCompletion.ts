@@ -8,7 +8,7 @@ import {
   saveConversation,
   getConversationById,
   generateConversationTitle,
-  shouldUsePluelyAPI,
+  shouldUseOmniAPI,
   MESSAGE_ID_OFFSET,
   generateConversationId,
   generateMessageId,
@@ -240,12 +240,12 @@ export const useCompletion = () => {
 
         let fullResponse = "";
 
-        const usePluelyAPI = await shouldUsePluelyAPI();
+        const useOmniAPI = await shouldUseOmniAPI();
         // Check if AI provider is configured
-        if (!selectedAIProvider.provider && !usePluelyAPI) {
+        if (!selectedAIProvider.provider && !useOmniAPI) {
           setState((prev) => ({
             ...prev,
-            error: "Please select an AI provider in settings",
+            error: "No AI provider selected. Please select one in settings.",
           }));
           return;
         }
@@ -253,10 +253,10 @@ export const useCompletion = () => {
         const provider = allAiProviders.find(
           (p) => p.id === selectedAIProvider.provider
         );
-        if (!provider && !usePluelyAPI) {
+        if (!provider && !useOmniAPI) {
           setState((prev) => ({
             ...prev,
-            error: "Invalid provider selected",
+            error: "AI provider configuration not found. Please check your settings.",
           }));
           return;
         }
@@ -272,7 +272,7 @@ export const useCompletion = () => {
         try {
           // Use the fetchAIResponse function with signal
           for await (const chunk of fetchAIResponse({
-            provider: usePluelyAPI ? undefined : provider,
+            provider: useOmniAPI ? undefined : provider,
             selectedProvider: selectedAIProvider,
             systemPrompt: systemPrompt || undefined,
             history: messageHistory,
@@ -643,9 +643,9 @@ export const useCompletion = () => {
 
             let fullResponse = "";
 
-            const usePluelyAPI = await shouldUsePluelyAPI();
+            const useOmniAPI = await shouldUseOmniAPI();
             // Check if AI provider is configured
-            if (!selectedAIProvider.provider && !usePluelyAPI) {
+            if (!selectedAIProvider.provider && !useOmniAPI) {
               setState((prev) => ({
                 ...prev,
                 error: "Please select an AI provider in settings",
@@ -656,7 +656,7 @@ export const useCompletion = () => {
             const provider = allAiProviders.find(
               (p) => p.id === selectedAIProvider.provider
             );
-            if (!provider && !usePluelyAPI) {
+            if (!provider && !useOmniAPI) {
               setState((prev) => ({
                 ...prev,
                 error: "Invalid provider selected",
@@ -675,7 +675,7 @@ export const useCompletion = () => {
 
             // Use the fetchAIResponse function with image and signal
             for await (const chunk of fetchAIResponse({
-              provider: usePluelyAPI ? undefined : provider,
+              provider: useOmniAPI ? undefined : provider,
               selectedProvider: selectedAIProvider,
               systemPrompt: systemPrompt || undefined,
               history: messageHistory,
