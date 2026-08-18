@@ -1,0 +1,26 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+categories:
+  - title: "🚀 Features & Enhancements"
+    labels:
+      - "feature"
+      - "enhancement"
+  - title: "🐛 Bug Fixes"
+    labels:
+      - "bug"
+      - "fix"
+  - title: "🛡️ Security & Performance"
+    labels:
+      - "security"
+      - "performance"
+  - title: "🧰 Maintenance & Dependencies"
+    labels:
+      - "dependencies"
+      - "chore"
+change-template: "- $TITLE (@$AUTHOR) in #$NUMBER"
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPO/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
