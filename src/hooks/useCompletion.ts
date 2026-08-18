@@ -14,6 +14,7 @@ import {
   generateMessageId,
   generateRequestId,
   getResponseSettings,
+  playCompletionSound,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -314,6 +315,7 @@ export const useCompletion = () => {
         }
 
         setState((prev) => ({ ...prev, isLoading: false }));
+        playCompletionSound();
 
         // Focus input after AI response is complete
         setTimeout(() => {

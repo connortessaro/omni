@@ -13,6 +13,7 @@ import {
 } from "@/components";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
+import { playHapticClick, playActionChime } from "@/lib";
 
 const SLASH_COMMANDS = [
   { command: "/fix", description: "Fix grammar & tone", example: "/fix <text>" },
@@ -89,7 +90,10 @@ export const Input = ({
               placeholder="Ask me anything or type / for commands..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyPress={(e) => {
+                if (e.key === "Enter") playHapticClick();
+                handleKeyPress(e);
+              }}
               onPaste={handlePaste}
               disabled={isLoading || isHidden}
               className={`${
@@ -117,6 +121,7 @@ export const Input = ({
                       key={action.label}
                       type="button"
                       onClick={() => {
+                        playActionChime();
                         setInput(`${action.prefix}${clipboardSnippet}`);
                         setTimeout(() => {
                           inputRef.current?.focus();
@@ -287,6 +292,7 @@ export const Input = ({
                               key={pill}
                               type="button"
                               onClick={() => {
+                                playHapticClick();
                                 const cleanPrompt = pill.replace(/^[^\w\s]+\s*/, "");
                                 setInput(cleanPrompt === "Caveman" ? "Rewrite in caveman ultra mode (max compression, zero fluff)" : cleanPrompt);
                                 setTimeout(() => {

@@ -119,6 +119,11 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  code, kbd, samp, pre, .font-mono {
+    font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
 }
 
