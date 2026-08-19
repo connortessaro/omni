@@ -30,6 +30,10 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+/** Unique per attachment: Date.now() alone collides within a millisecond. */
+const newAttachmentId = (): string =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 // Types for completion
 interface AttachedFile {
   id: string;
@@ -113,6 +117,9 @@ export const useCompletion = () => {
   const screenshotConfigRef = useRef(screenshotConfiguration);
   const hasCheckedPermissionRef = useRef(false);
   const screenshotInitiatedByThisContext = useRef(false);
+  // Which attachments are already in the database for this conversation, so images
+  // that stay attached across turns are not written once per message.
+  const persistedFileIdsRef = useRef<Set<string>>(new Set());
 
   const { resizeWindow } = useWindowResize();
 
@@ -142,7 +149,7 @@ export const useCompletion = () => {
     try {
       const base64 = await fileToBase64(file);
       const attachedFile: AttachedFile = {
-        id: Date.now().toString(),
+        id: newAttachmentId(),
         name: file.name,
         type: file.type,
         base64,
@@ -223,6 +230,7 @@ export const useCompletion = () => {
 
       // Handle /clear slash command
       if (trimmedInput === "/clear") {
+        persistedFileIdsRef.current.clear();
         setState((prev) => ({
           ...prev,
           input: "",
@@ -451,16 +459,27 @@ export const useCompletion = () => {
 
         // Save the conversation after successful completion
         if (fullResponse) {
-          await saveCurrentConversation(
-            input,
-            fullResponse,
-            state.attachedFiles
+          // Only the images this turn added. They stay attached for follow-ups, so
+          // saving all of them every turn would write the same base64 into the
+          // database once per message.
+          const newlyAttached = state.attachedFiles.filter(
+            (file) => !persistedFileIdsRef.current.has(file.id)
           );
-          // Clear input and attached files after saving
+          newlyAttached.forEach((file) =>
+            persistedFileIdsRef.current.add(file.id)
+          );
+
+          await saveCurrentConversation(input, fullResponse, newlyAttached);
+
+          // Attachments deliberately survive. A screenshot is the subject of the
+          // next three questions as often as it is the subject of one, and clearing
+          // it here meant the model answered "what line is that on?" about an image
+          // it no longer had, from what it had already said about it. They are
+          // visible in the paperclip badge and removable there, they are charged
+          // against the token budget, and MAX_FILES still caps them.
           setState((prev) => ({
             ...prev,
             input: "",
-            attachedFiles: [],
           }));
         }
       } catch (error) {
@@ -502,6 +521,7 @@ export const useCompletion = () => {
       return;
     }
     cancel();
+    persistedFileIdsRef.current.clear();
     setState((prev) => ({
       ...prev,
       input: "",
@@ -566,6 +586,7 @@ export const useCompletion = () => {
   }, []);
 
   const startNewConversation = useCallback(() => {
+    persistedFileIdsRef.current.clear();
     setState((prev) => ({
       ...prev,
       currentConversationId: null,
@@ -784,7 +805,7 @@ export const useCompletion = () => {
         if (prompt) {
           // Auto mode: Submit directly to AI with screenshot
           const attachedFile: AttachedFile = {
-            id: Date.now().toString(),
+            id: newAttachmentId(),
             name: `screenshot_${Date.now()}.png`,
             type: "image/png",
             base64: base64,
@@ -913,7 +934,7 @@ export const useCompletion = () => {
         } else {
           // Manual mode: Add to attached files
           const attachedFile: AttachedFile = {
-            id: Date.now().toString(),
+            id: newAttachmentId(),
             name: `screenshot_${Date.now()}.png`,
             type: "image/png",
             base64: base64,
