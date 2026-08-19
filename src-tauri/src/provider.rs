@@ -7,7 +7,7 @@ use serde::Deserialize;
 use tauri::ipc::Channel;
 use tauri::State;
 
-use crate::secrets::inject_secrets;
+use crate::secrets::{inject_secrets_for, origin_of};
 
 /// Issues provider requests on behalf of the frontend.
 ///
@@ -73,11 +73,15 @@ pub fn take_complete_utf8(buffer: &mut Vec<u8>) -> String {
     }
 }
 
-fn build_headers(provider_id: &str, raw: &HashMap<String, String>) -> Result<HeaderMap, String> {
+fn build_headers(
+    provider_id: &str,
+    destination: &str,
+    raw: &HashMap<String, String>,
+) -> Result<HeaderMap, String> {
     let mut headers = HeaderMap::new();
 
     for (name, value) in raw {
-        let injected = inject_secrets(provider_id, value)?;
+        let injected = inject_secrets_for(provider_id, destination, value)?;
         let header_name = HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| format!("Invalid header name: {name}"))?;
         let header_value = HeaderValue::from_str(&injected)
@@ -130,10 +134,16 @@ async fn send(
     cancelled: &CancelledRequests,
     on_chunk: &Channel<String>,
 ) -> Result<(), String> {
-    let url = inject_secrets(provider_id, url)?;
-    let header_map = build_headers(provider_id, headers)?;
+    // The origin is read from the URL as the frontend supplied it, before any
+    // substitution. A placeholder in the host would therefore fail to match any
+    // bound origin and the request is refused, rather than resolving into a host
+    // the secret was never meant for.
+    let destination = origin_of(url)?;
+
+    let url = inject_secrets_for(provider_id, &destination, url)?;
+    let header_map = build_headers(provider_id, &destination, headers)?;
     let body = match body {
-        Some(raw) => Some(inject_secrets(provider_id, raw)?),
+        Some(raw) => Some(inject_secrets_for(provider_id, &destination, raw)?),
         None => None,
     };
 
@@ -264,6 +274,18 @@ mod tests {
         assert!(
             !state.is_cancelled("req_a"),
             "a finished request must not leave its id behind, or an id reuse cancels instantly"
+        );
+    }
+
+    #[test]
+    fn the_destination_is_read_before_substitution() {
+        // A placeholder smuggled into the host must not resolve. Reading the
+        // origin from the raw URL means it fails to match any bound origin.
+        let smuggled = "https://{{OMNI_SECRET:API_KEY}}.evil.example/v1/chat";
+        let origin = origin_of(smuggled);
+        assert!(
+            origin.is_err() || !origin.unwrap().contains("api.openai.com"),
+            "a placeholder in the host must never resolve to a real provider origin"
         );
     }
 

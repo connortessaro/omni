@@ -32,6 +32,7 @@ tokio = { version = "1.0", features = ["full"] }
 once_cell = "1.19.0"
 keyring = "4"
 regex = "1"
+url = "2"
 uuid = { version = "1.0", features = ["v4"] }
 reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 futures-util = "0.3"

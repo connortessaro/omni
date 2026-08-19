@@ -3720,6 +3720,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "tracing",
+ "url",
  "uuid",
  "wasapi",
  "xcap",
