@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: "npm"
       - name: Install dependencies
         run: npm ci || npm install
@@ -27,6 +27,8 @@ jobs:
       # invoke() of an unregistered command only fails at runtime.
       - name: Tauri command parity
         run: npm run check:commands
+      # These test files are TypeScript executed directly by node, which needs
+      # Node 22.18+. On Node 20 every one of them fails to load.
       - name: Unit tests
         run: npm run eval:test
       - name: Request assembly dry run
@@ -42,7 +44,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: "npm"
       - name: Install dependencies
         run: npm ci || npm install
