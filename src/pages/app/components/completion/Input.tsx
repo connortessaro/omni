@@ -360,14 +360,19 @@ export const Input = ({
                 </div>
               )}
               {isLoading && (
-                <div className="flex items-center gap-2 my-4 text-muted-foreground animate-pulse select-none">
+                <div
+                  data-hud-loading
+                  className="flex items-center gap-2 my-4 text-muted-foreground animate-pulse select-none"
+                >
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span className="text-sm">Generating response...</span>
                 </div>
               )}
               {response && (
                 <div>
-                  <Markdown>{response}</Markdown>
+                  <div data-hud-response>
+                    <Markdown>{response}</Markdown>
+                  </div>
                   {!isLoading && (
                     <div className="flex flex-col gap-2 pt-3 border-t border-border/40 mt-3">
                       <div className="flex flex-wrap items-center justify-between gap-1.5">

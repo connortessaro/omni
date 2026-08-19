@@ -8,6 +8,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:live": "node dev-harness/dev-live.mjs",
+    "dev:harness": "OMNI_HARNESS=1 vite",
+    "dev:proxy": "node dev-harness/provider-proxy.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
