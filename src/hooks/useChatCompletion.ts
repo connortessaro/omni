@@ -12,6 +12,7 @@ import {
   getResponseSettings,
   fitHistoryToBudget,
   historyBudgetNotice,
+  budgetOverflowNotice,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -158,19 +159,6 @@ export const useChatCompletion = (
       const signal = abortControllerRef.current.signal;
 
       try {
-        // Prepare message history for the AI
-        const budgeted = fitHistoryToBudget(
-          (messages?.messages || []).map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-          input
-        );
-        const messageHistory = budgeted.turns;
-        if (budgeted.droppedCount > 0) {
-          console.warn(historyBudgetNotice(budgeted.droppedCount));
-        }
-
         // Handle image attachments
         const imagesBase64: string[] = [];
         if (state.attachedFiles.length > 0) {
@@ -179,6 +167,32 @@ export const useChatCompletion = (
               imagesBase64.push(file.base64);
             }
           });
+        }
+
+        // Prepare message history for the AI. Screenshots are counted here for the
+        // same reason they are in the HUD: a full-screen capture is thousands of
+        // tokens, and a budget that cannot see them will keep a history that does
+        // not fit alongside them.
+        const budgeted = fitHistoryToBudget(
+          (messages?.messages || []).map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          { text: input, imagesBase64 }
+        );
+
+        if (budgeted.overflow) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: budgetOverflowNotice(budgeted),
+          }));
+          return;
+        }
+
+        const messageHistory = budgeted.turns;
+        if (budgeted.droppedCount > 0) {
+          console.warn(historyBudgetNotice(budgeted.droppedCount));
         }
 
         // Check if AI provider is configured

@@ -23,6 +23,7 @@ import {
   PASTE_AS_BLOCK_THRESHOLD,
   fitHistoryToBudget,
   historyBudgetNotice,
+  budgetOverflowNotice,
   runAgentLoopAsText,
   TOOLS,
 } from "@/lib";
@@ -305,24 +306,6 @@ export const useCompletion = () => {
       const signal = abortControllerRef.current.signal;
 
       try {
-        // Trim history to what the model can actually accept. Sending the
-        // whole conversation every turn used to hard-fail on a context error.
-        const budgeted = fitHistoryToBudget(
-          conversationHistoryRef.current.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-          rawInput
-        );
-        const messageHistory = budgeted.turns;
-        setState((prev) => ({
-          ...prev,
-          historyNotice:
-            budgeted.droppedCount > 0
-              ? historyBudgetNotice(budgeted.droppedCount)
-              : null,
-        }));
-
         // Handle image attachments
         const imagesBase64: string[] = [];
         if (state.attachedFiles.length > 0) {
@@ -337,6 +320,39 @@ export const useCompletion = () => {
         const userMessage = attachedContext
           ? `${attachedContext}\n\n${input}`
           : input;
+
+        // Trim history to what the model can actually accept. The budget is given
+        // the whole turn, not just the typed line: attached files and screenshots
+        // are most of the payload in a repo-level question, and counting them as
+        // zero is how a session with six files attached hit a provider context
+        // error with a full history still in flight.
+        const budgeted = fitHistoryToBudget(
+          conversationHistoryRef.current.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          { text: input, contextText: attachedContext, imagesBase64 }
+        );
+
+        // No amount of dropped history rescues a turn this large, so say what to
+        // remove instead of sending it and relaying the provider's rejection.
+        if (budgeted.overflow) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: budgetOverflowNotice(budgeted),
+          }));
+          return;
+        }
+
+        const messageHistory = budgeted.turns;
+        setState((prev) => ({
+          ...prev,
+          historyNotice:
+            budgeted.droppedCount > 0
+              ? historyBudgetNotice(budgeted.droppedCount)
+              : null,
+        }));
 
         let fullResponse = "";
 
