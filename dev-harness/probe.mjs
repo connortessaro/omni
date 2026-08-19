@@ -310,6 +310,21 @@ const run = async () => {
       `${chipsAfterFollowUp} after the follow-up`
   );
 
+  // 8. the answer panel is sized to the answer.
+  //
+  // It used to request a flat 600px the moment anything appeared, so a one-word
+  // reply covered as much of the screen as a long one. On an always-on-top overlay
+  // sitting over the window you are working in, that is most of the cost of using
+  // it. Measured through the short message the previous step left on screen.
+  const shortAnswerHeight = (await measure(page)).requestedWindowHeight;
+  record(
+    "the answer panel is sized to the answer, not to the screen",
+    shortAnswerHeight !== null &&
+      shortAnswerHeight > HUD_RESTING_HEIGHT &&
+      shortAnswerHeight < 600,
+    `a short message asked for ${shortAnswerHeight}px (was a flat 600px)`
+  );
+
   record(
     "no console errors",
     consoleErrors.length === 0,

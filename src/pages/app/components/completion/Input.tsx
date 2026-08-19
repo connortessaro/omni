@@ -349,7 +349,11 @@ export const Input = ({
             </div>
           </div>
 
-          <ScrollArea ref={scrollAreaRef} className="h-[calc(100vh-7rem)]">
+          {/* Content-sized up to the cap, not a fixed slice of the window: a fixed
+              height made a one-line answer occupy the same 488px as a long one, and
+              made the panel height depend on the window height it is supposed to
+              determine. */}
+          <ScrollArea ref={scrollAreaRef} className="max-h-[488px]">
             <div className="p-4">
               {error && (
                 <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
