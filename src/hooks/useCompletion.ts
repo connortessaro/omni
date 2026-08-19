@@ -100,6 +100,11 @@ export const useCompletion = () => {
     }
   });
   const promptHistoryIndexRef = useRef<number>(-1);
+  // saveCurrentConversation runs after the streaming loop finishes, by which
+  // point the state it closed over can be several renders old. Reading through
+  // refs removes the whole class of staleness rather than chasing dep arrays.
+  const conversationHistoryRef = useRef<ChatMessage[]>([]);
+  const currentConversationIdRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const isProcessingScreenshotRef = useRef(false);
   const screenshotConfigRef = useRef(screenshotConfiguration);
@@ -111,6 +116,11 @@ export const useCompletion = () => {
   useEffect(() => {
     screenshotConfigRef.current = screenshotConfiguration;
   }, [screenshotConfiguration]);
+
+  useEffect(() => {
+    conversationHistoryRef.current = state.conversationHistory;
+    currentConversationIdRef.current = state.currentConversationId;
+  }, [state.conversationHistory, state.currentConversationId]);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -288,7 +298,7 @@ export const useCompletion = () => {
         // Trim history to what the model can actually accept. Sending the
         // whole conversation every turn used to hard-fail on a context error.
         const budgeted = fitHistoryToBudget(
-          state.conversationHistory.map((msg) => ({
+          conversationHistoryRef.current.map((msg) => ({
             role: msg.role,
             content: msg.content,
           })),
@@ -432,7 +442,9 @@ export const useCompletion = () => {
       selectedAIProvider,
       allAiProviders,
       systemPrompt,
-      state.conversationHistory,
+      // saveCurrentConversation is intentionally absent: it has no deps of its
+      // own now, so it is stable for the life of the hook, and it is declared
+      // below this point so naming it here would be a use-before-declaration.
     ]
   );
 
@@ -515,8 +527,10 @@ export const useCompletion = () => {
         return;
       }
 
+      const existingConversationId = currentConversationIdRef.current;
+      const previousMessages = conversationHistoryRef.current;
       const conversationId =
-        state.currentConversationId || generateConversationId("chat");
+        existingConversationId || generateConversationId("chat");
       const timestamp = Date.now();
 
       const userMsg: ChatMessage = {
@@ -536,14 +550,14 @@ export const useCompletion = () => {
         timestamp: timestamp + MESSAGE_ID_OFFSET,
       };
 
-      const newMessages = [...state.conversationHistory, userMsg, assistantMsg];
+      const newMessages = [...previousMessages, userMsg, assistantMsg];
 
       // Get existing conversation if updating
       let existingConversation = null;
-      if (state.currentConversationId) {
+      if (existingConversationId) {
         try {
           existingConversation = await getConversationById(
-            state.currentConversationId
+            existingConversationId
           );
         } catch (error) {
           console.error("Failed to get existing conversation:", error);
@@ -551,7 +565,7 @@ export const useCompletion = () => {
       }
 
       const title =
-        state.conversationHistory.length === 0
+        previousMessages.length === 0
           ? generateConversationTitle(userMessage)
           : existingConversation?.title ||
             generateConversationTitle(userMessage);
@@ -567,6 +581,11 @@ export const useCompletion = () => {
       try {
         await saveConversation(conversation);
 
+        // Update the refs before the render lands, so a send that arrives in
+        // the same tick appends to this conversation instead of forking a new one.
+        currentConversationIdRef.current = conversationId;
+        conversationHistoryRef.current = newMessages;
+
         setState((prev) => ({
           ...prev,
           currentConversationId: conversationId,
@@ -581,7 +600,7 @@ export const useCompletion = () => {
         }));
       }
     },
-    [state.currentConversationId, state.conversationHistory]
+    []
   );
 
   // Listen for conversation events from the main ChatHistory component
@@ -723,7 +742,7 @@ export const useCompletion = () => {
 
           try {
             const budgeted = fitHistoryToBudget(
-              state.conversationHistory.map((msg) => ({
+              conversationHistoryRef.current.map((msg) => ({
                 role: msg.role,
                 content: msg.content,
               })),
