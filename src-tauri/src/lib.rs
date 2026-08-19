@@ -1,6 +1,8 @@
 #![allow(unexpected_cfgs)]
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod capture;
+mod provider;
+mod secrets;
 mod db;
 mod shortcuts;
 mod window;
@@ -37,6 +39,7 @@ pub fn run() {
         )
         .manage(AudioState::default())
         .manage(CaptureState::default())
+        .manage(provider::CancelledRequests::default())
         .manage(shortcuts::WindowVisibility {
             is_hidden: Mutex::new(false),
         })
@@ -67,6 +70,11 @@ pub fn run() {
             shortcuts::set_app_icon_visibility,
             shortcuts::set_always_on_top,
             shortcuts::exit_app,
+            secrets::secret_store,
+            secrets::secret_delete,
+            secrets::secret_exists,
+            provider::provider_request,
+            provider::provider_request_cancel,
             speaker::start_system_audio_capture,
             speaker::stop_system_audio_capture,
             speaker::manual_stop_continuous,
