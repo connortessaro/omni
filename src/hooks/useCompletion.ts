@@ -39,6 +39,7 @@ interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
+  attachedFiles?: AttachedFile[];
 }
 
 interface ChatConversation {
@@ -488,7 +489,7 @@ export const useCompletion = () => {
     async (
       userMessage: string,
       assistantResponse: string,
-      _attachedFiles: AttachedFile[]
+      attachedFiles: AttachedFile[]
     ) => {
       // Validate inputs
       if (!userMessage || !assistantResponse) {
@@ -505,6 +506,9 @@ export const useCompletion = () => {
         role: "user",
         content: userMessage,
         timestamp,
+        // The messages.attached_files column has always existed and the DB layer
+        // has always written it; this hook was the only thing dropping them.
+        attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
       };
 
       const assistantMsg: ChatMessage = {
