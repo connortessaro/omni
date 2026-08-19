@@ -103,14 +103,31 @@ export const useHudAutoHeight = (ref: RefObject<HTMLElement | null>) => {
     const element = ref.current;
     if (!element) return;
 
-    const observer = new ResizeObserver(async (entries) => {
-      const entry = entries[0];
-      if (!entry) return;
+    /**
+     * The clipboard suggestion bar and the slash-command menu are positioned
+     * absolutely, so they add no flow height and the card's own box does not
+     * cover them. Measuring to the lowest edge of the subtree is what keeps the
+     * native window from clipping them.
+     */
+    /**
+     * The clipboard suggestion bar and the slash-command menu are positioned
+     * absolutely, so they add no flow height and the card's own box does not
+     * cover them. Measure to the lowest edge of the subtree instead.
+     */
+    const contentHeight = (): number => {
+      const cardRect = element.getBoundingClientRect();
+      let bottom = cardRect.bottom;
 
-      const borderBoxHeight =
-        entry.borderBoxSize?.[0]?.blockSize ??
-        element.getBoundingClientRect().height;
-      const next = clampHudHeight(borderBoxHeight);
+      element.querySelectorAll("[data-hud-overlay]").forEach((overlay) => {
+        const rect = overlay.getBoundingClientRect();
+        if (rect.height > 0) bottom = Math.max(bottom, rect.bottom);
+      });
+
+      return bottom - cardRect.top;
+    };
+
+    const apply = async () => {
+      const next = clampHudHeight(contentHeight());
       if (next === measuredHudHeight) return;
       measuredHudHeight = next;
 
@@ -124,10 +141,48 @@ export const useHudAutoHeight = (ref: RefObject<HTMLElement | null>) => {
       } catch (error) {
         console.error("Failed to resize window:", error);
       }
-    });
+    };
 
-    observer.observe(element);
-    return () => observer.disconnect();
+    const sizeObserver = new ResizeObserver(() => {
+      void apply();
+    });
+    sizeObserver.observe(element);
+
+    const trackOverlays = () => {
+      element
+        .querySelectorAll("[data-hud-overlay]")
+        .forEach((overlay) => sizeObserver.observe(overlay));
+    };
+    trackOverlays();
+
+    // An overlay mounting or unmounting leaves the card's own size untouched,
+    // so a ResizeObserver alone never hears about it.
+    // An overlay slides in with a transform, and a rect reflects that transform,
+    // so a measurement taken the moment it mounts reads a box still in motion.
+    // Re-measure on the next frame and again when the animation finishes.
+    const applySoon = () => {
+      void apply();
+      requestAnimationFrame(() => void apply());
+    };
+
+    const treeObserver = new MutationObserver(() => {
+      trackOverlays();
+      applySoon();
+    });
+    treeObserver.observe(element, { childList: true, subtree: true });
+
+    const onAnimationEnd = () => void apply();
+    element.addEventListener("animationend", onAnimationEnd, true);
+    element.addEventListener("transitionend", onAnimationEnd, true);
+
+    applySoon();
+
+    return () => {
+      sizeObserver.disconnect();
+      treeObserver.disconnect();
+      element.removeEventListener("animationend", onAnimationEnd, true);
+      element.removeEventListener("transitionend", onAnimationEnd, true);
+    };
   }, [ref]);
 };
 

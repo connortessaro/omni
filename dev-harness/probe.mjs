@@ -51,6 +51,17 @@ const measure = (page) =>
         : null,
       promptLineHeight: prompt ? getComputedStyle(prompt).lineHeight : null,
       chips: document.querySelectorAll('[data-slot="context-chip"]').length,
+      overlayBottomOverflow: (() => {
+        const card = document.querySelector('[data-slot="card"]');
+        if (!card) return null;
+        const cardRect = card.getBoundingClientRect();
+        let lowest = cardRect.bottom;
+        card.querySelectorAll("[data-hud-overlay]").forEach((overlay) => {
+          const r = overlay.getBoundingClientRect();
+          if (r.height > 0) lowest = Math.max(lowest, r.bottom);
+        });
+        return Math.round(lowest - cardRect.top);
+      })(),
       requestedWindowHeight: window.__HARNESS__?.lastWindowHeight() ?? null,
       overflowingChildren: card
         ? Array.from(card.children)
@@ -176,6 +187,24 @@ const run = async () => {
     chipped.cardHeight > HUD_RESTING_HEIGHT,
     `card=${chipped.cardHeight}px, window asked for ${chipped.requestedWindowHeight}px`
   );
+
+  // 5. an out-of-flow overlay must still fit the window the app requests
+  await page.setViewportSize({ width: HUD_WIDTH, height: HUD_RESTING_HEIGHT });
+  await prompt.fill("");
+  await prompt.click();
+  await prompt.pressSequentially("/co");
+  // The menu slides in with a transform; wait it out so the visual box and the
+  // layout box agree before comparing them.
+  await page.waitForTimeout(600);
+  const withMenu = await measure(page);
+  await captureAt(page, withMenu.requestedWindowHeight, "4-slash-menu.png");
+  record(
+    "slash-command menu fits inside the requested window",
+    withMenu.overlayBottomOverflow > HUD_RESTING_HEIGHT &&
+      withMenu.requestedWindowHeight >= withMenu.overlayBottomOverflow,
+    `menu reaches ${withMenu.overlayBottomOverflow}px below the card top, window asked for ${withMenu.requestedWindowHeight}px`
+  );
+  await prompt.fill("");
 
   record(
     "no console errors",

@@ -178,7 +178,9 @@ export const Input = ({
 
             {/* Smart Clipboard Inline AI Actions */}
             {clipboardSnippet && !input && !isPopoverOpen && !isLoading && (
-              <div className="absolute left-0 right-0 top-full mt-2 flex items-center justify-between px-3 py-1.5 rounded-xl bg-card/95 backdrop-blur-2xl border border-white/10 shadow-xl text-xs animate-in fade-in slide-in-from-top-1 duration-150 z-40">
+              <div
+                data-hud-overlay
+                className="absolute left-0 right-0 top-full mt-2 flex items-center justify-between px-3 py-1.5 rounded-xl bg-card/95 backdrop-blur-2xl border border-white/10 shadow-xl text-xs animate-in fade-in slide-in-from-top-1 duration-150 z-40">
                 <div className="flex items-center gap-1.5 text-muted-foreground truncate max-w-[160px]">
                   <Clipboard className="size-3 text-cyan-400 shrink-0" />
                   <span className="truncate text-[11px] font-mono opacity-80">"{clipboardSnippet.slice(0, 24)}..."</span>
@@ -216,7 +218,9 @@ export const Input = ({
 
             {/* Slash command autocomplete */}
             {input.startsWith("/") && !isPopoverOpen && !isLoading && (
-              <div className="absolute left-0 right-0 top-full mt-2 bg-popover/95 backdrop-blur-md border border-input/60 rounded-xl shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div
+                data-hud-overlay
+                className="absolute left-0 right-0 top-full mt-2 bg-popover/95 backdrop-blur-md border border-input/60 rounded-xl shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
                 <div className="text-[10px] text-muted-foreground/70 px-2 py-1 font-semibold uppercase tracking-wider">
                   Slash Commands
                 </div>
