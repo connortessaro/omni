@@ -10,7 +10,6 @@
 [![Tauri](https://img.shields.io/badge/Tauri-v2-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-2021-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)](https://react.dev)
-[![Telemetry](https://img.shields.io/badge/telemetry-zero-success?style=flat-square)](#)
 
 </div>
 
@@ -19,7 +18,7 @@
 ## ⚡ Highlights
 
 * **Instant HUD Overlay**: Summon floating command bar anywhere via `⌘ + \` (customizable).
-* **Zero Telemetry / 100% Local-First**: Keys & chats stay on disk in SQLite (`omni.db`). No tracking.
+* **Local-First Storage**: Keys & chats stay on disk in SQLite (`omni.db`).
 * **Instant Slash Commands**: `/fix`, `/explain`, `/code`, `/summarize`, `/regex`, `/clear`.
 * **Keyboard History**: Press `↑` / `↓` in input box to cycle through recent prompts.
 * **1-Click Local Ollama Detection**: Auto-detects local models (`http://127.0.0.1:11434`) without manual configuration.
