@@ -17,7 +17,8 @@
     "eval:run": "node evals/scripts/run-eval.ts",
     "hud:probe": "node dev-harness/probe.mjs",
     "check:commands": "node scripts/check-commands.mjs",
-    "verify:models": "node scripts/verify-model-listing.mjs"
+    "verify:models": "node scripts/verify-model-listing.mjs",
+    "verify:agent": "node scripts/verify-agent-loop.mjs"
   },
   "dependencies": {
     "@bany/curl-to-json": "^1.2.8",

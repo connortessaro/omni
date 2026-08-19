@@ -41,6 +41,7 @@ const SLASH_COMMANDS = [
   { command: "/summarize", description: "Summarize bullet points", example: "/summarize <text>" },
   { command: "/translate", description: "Translate to English / target", example: "/translate <text>" },
   { command: "/regex", description: "Explain or build regex", example: "/regex <pattern>" },
+  { command: "/solve", description: "Work step by step, using tools", example: "/solve <problem>" },
   { command: "/clear", description: "Clear conversation", example: "/clear" },
 ];
 

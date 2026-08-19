@@ -23,6 +23,8 @@ import {
   PASTE_AS_BLOCK_THRESHOLD,
   fitHistoryToBudget,
   historyBudgetNotice,
+  runAgentLoopAsText,
+  TOOLS,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -243,8 +245,16 @@ export const useCompletion = () => {
       const matches = (command: string): boolean =>
         trimmedInput === command || trimmedInput.startsWith(`${command} `);
 
+      // Multi-step is opt-in. Extra round trips on a one-line question would
+      // cost the HUD the thing that makes it worth using.
+      const useTools = matches("/solve");
+
       let input = trimmedInput;
-      if (matches("/fix")) {
+      if (useTools) {
+        input =
+          argFor("/solve") ||
+          orContext("", "(no request provided, ask what to solve)");
+      } else if (matches("/fix")) {
         input = `Please fix grammar, spelling, clarity, and tone for the following text:\n\n${orContext(argFor("/fix"), "(no text provided, please provide suggestions for writing improvements)")}`;
       } else if (matches("/commit")) {
         input = `You are an expert software engineer. Generate concise, conventional git commit message(s) (format: <type>(<scope>): <summary> followed by key bullet points) based on the following diff or changes:\n\n${orContext(argFor("/commit"), "(Please analyze recent changes or generate conventional commit templates)")}`;
@@ -358,17 +368,30 @@ export const useCompletion = () => {
           response: "",
         }));
 
+        const responseStream = useTools
+          ? runAgentLoopAsText({
+              fetchAIResponse,
+              provider,
+              selectedProvider: selectedAIProvider,
+              systemPrompt: systemPrompt || undefined,
+              history: messageHistory,
+              userMessage,
+              imagesBase64,
+              signal,
+              toolNames: Object.keys(TOOLS),
+            })
+          : fetchAIResponse({
+              provider: provider,
+              selectedProvider: selectedAIProvider,
+              systemPrompt: systemPrompt || undefined,
+              history: messageHistory,
+              userMessage,
+              imagesBase64,
+              signal,
+            });
+
         try {
-          // Use the fetchAIResponse function with signal
-          for await (const chunk of fetchAIResponse({
-            provider: provider,
-            selectedProvider: selectedAIProvider,
-            systemPrompt: systemPrompt || undefined,
-            history: messageHistory,
-            userMessage,
-            imagesBase64,
-            signal,
-          })) {
+          for await (const chunk of responseStream) {
             // Only update if this is still the current request
             if (currentRequestIdRef.current !== requestId) {
               return; // Request was superseded, stop processing

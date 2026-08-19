@@ -10,4 +10,6 @@ export * from "./response-settings.constants";
 export * from "./sound";
 export * from "./context/context-block";
 export * from "./context/budget";
+export * from "./agent/tools";
+export * from "./agent/loop";
 
