@@ -17,14 +17,14 @@ let globalEventListeners: {
 let lastScreenshotEventTime = 0;
 
 // Global callback refs
-let globalInputRef: HTMLInputElement | null = null;
+let globalInputRef: HTMLTextAreaElement | null = null;
 let globalAudioCallback: (() => void) | null = null;
 let globalScreenshotCallback: (() => void | Promise<void>) | null = null;
 let globalSystemAudioCallback: (() => void) | null = null;
 let globalCustomShortcutCallbacks: Map<string, () => void> = new Map();
 
 export const useGlobalShortcuts = () => {
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const audioCallbackRef = useRef<(() => void) | null>(null);
   const screenshotCallbackRef = useRef<(() => void) | null>(null);
   const systemAudioCallbackRef = useRef<(() => void) | null>(null);
@@ -67,7 +67,7 @@ export const useGlobalShortcuts = () => {
   }, []);
 
   // Register input element for auto-focus
-  const registerInputRef = useCallback((input: HTMLInputElement | null) => {
+  const registerInputRef = useCallback((input: HTMLTextAreaElement | null) => {
     inputRef.current = input;
     globalInputRef = input;
   }, []);

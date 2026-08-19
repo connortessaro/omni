@@ -6,6 +6,7 @@ import {
   ChangeEvent,
   ClipboardEvent,
 } from "react";
+import { ContextBlock } from "@/lib";
 // import {
 //   AttachedFile,
 //   ChatMessage,
@@ -46,6 +47,14 @@ export interface UseCompletionReturn {
   removeFile: (fileId: string) => void;
   /** Function to clear all attached files */
   clearFiles: () => void;
+
+  // Context blocks: large pastes and text/code files sent alongside the prompt
+  /** Blocks attached to the next prompt */
+  contextBlocks: ContextBlock[];
+  /** Function to attach a block */
+  addContextBlock: (block: ContextBlock) => void;
+  /** Function to remove a block by its ID */
+  removeContextBlock: (blockId: string) => void;
 
   // Completion actions
   /** Function to submit the completion request, optionally with speech text */
@@ -122,7 +131,7 @@ export interface UseCompletionReturn {
   onRemoveAllFiles: () => void;
 
   /** Ref for the input element */
-  inputRef: RefObject<HTMLInputElement | null>;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   /** Function to capture a screenshot */
   captureScreenshot: () => Promise<void>;
   /** Whether a screenshot is currently loading */

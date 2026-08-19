@@ -13,9 +13,10 @@ import {
   AudioVisualizer,
   StatusIndicator,
 } from "./components";
-import { useApp } from "@/hooks";
+import { useApp, useHudAutoHeight } from "@/hooks";
 import { useApp as useAppContext } from "@/contexts";
 import { invoke } from "@tauri-apps/api/core";
+import { useRef } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import { ErrorLayout } from "@/layouts";
 import { getPlatform } from "@/lib";
@@ -24,6 +25,9 @@ const App = () => {
   const { isHidden, systemAudio } = useApp();
   const { customizable } = useAppContext();
   const platform = getPlatform();
+  const hudRef = useRef<HTMLDivElement>(null);
+
+  useHudAutoHeight(hudRef);
 
   const openDashboard = async () => {
     try {
@@ -48,7 +52,7 @@ const App = () => {
           isHidden ? "hidden pointer-events-none" : ""
         }`}
       >
-        <Card className="w-full flex flex-row items-center gap-2 p-2 rounded-2xl bg-card/85 backdrop-blur-2xl border border-white/10 shadow-2xl transition-all duration-300 hover:border-primary/40">
+        <Card ref={hudRef} className="w-full flex flex-row items-start gap-2 p-2 rounded-2xl bg-card/85 backdrop-blur-2xl border border-white/10 shadow-2xl transition-all duration-300 hover:border-primary/40">
           <SystemAudio {...systemAudio} />
           {systemAudio?.capturing ? (
             <div className="flex flex-row items-center gap-2 justify-between w-full">

@@ -22,7 +22,7 @@ export const AI_PROVIDERS = [
     "model": "{{MODEL}}",
     "system": "{{SYSTEM_PROMPT}}",
     "messages": [{"role": "user", "content": [{"type": "text", "text": "{{TEXT}}"}, {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "{{IMAGE}}"}}]}],
-    "max_tokens": 1024
+    "max_tokens": 8192
   }'`,
     responseContentPath: "content[0].text",
     streaming: true,

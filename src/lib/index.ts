@@ -8,4 +8,5 @@ export * from "./chat-constants";
 export * from "./platform";
 export * from "./response-settings.constants";
 export * from "./sound";
+export * from "./context/context-block";
 

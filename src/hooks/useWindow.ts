@@ -1,6 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { useCallback, useEffect } from "react";
+import { RefObject, useCallback, useEffect } from "react";
+
+const MIN_HUD_HEIGHT = 54;
+const MAX_HUD_HEIGHT = 600;
+
+/**
+ * Height the collapsed HUD needs for its own flow content. Grows when context
+ * chips are attached or the prompt box wraps to more lines.
+ */
+let measuredHudHeight = MIN_HUD_HEIGHT;
+
+const clampHudHeight = (height: number): number =>
+  Math.min(Math.max(Math.ceil(height), MIN_HUD_HEIGHT), MAX_HUD_HEIGHT);
 
 // Helper function to check if any popover is open in the DOM
 const isAnyPopoverOpen = (): boolean => {
@@ -19,7 +31,7 @@ export const useWindowResize = () => {
         return;
       }
 
-      const newHeight = expanded ? 600 : 54;
+      const newHeight = expanded ? MAX_HUD_HEIGHT : measuredHudHeight;
 
       await invoke("set_window_height", {
         window,
@@ -80,6 +92,43 @@ export const useWindowResize = () => {
   }, [resizeWindow]);
 
   return { resizeWindow };
+};
+
+/**
+ * Keeps the collapsed HUD exactly as tall as its content. Without this the
+ * window is a fixed 54px and anything taller than one line gets clipped.
+ */
+export const useHudAutoHeight = (ref: RefObject<HTMLElement | null>) => {
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+
+    const observer = new ResizeObserver(async (entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+
+      const borderBoxHeight =
+        entry.borderBoxSize?.[0]?.blockSize ??
+        element.getBoundingClientRect().height;
+      const next = clampHudHeight(borderBoxHeight);
+      if (next === measuredHudHeight) return;
+      measuredHudHeight = next;
+
+      if (isAnyPopoverOpen()) return;
+
+      try {
+        await invoke("set_window_height", {
+          window: getCurrentWebviewWindow(),
+          height: next,
+        });
+      } catch (error) {
+        console.error("Failed to resize window:", error);
+      }
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
 };
 
 interface UseWindowFocusOptions {

@@ -14,6 +14,13 @@ import {
   generateRequestId,
   getResponseSettings,
   playCompletionSound,
+  ContextBlock,
+  createFileBlock,
+  createPasteBlock,
+  isTextFile,
+  renderBlocksAsText,
+  MAX_BLOCK_BYTES,
+  PASTE_AS_BLOCK_THRESHOLD,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -48,6 +55,7 @@ interface CompletionState {
   isLoading: boolean;
   error: string | null;
   attachedFiles: AttachedFile[];
+  contextBlocks: ContextBlock[];
   currentConversationId: string | null;
   conversationHistory: ChatMessage[];
 }
@@ -68,6 +76,7 @@ export const useCompletion = () => {
     isLoading: false,
     error: null,
     attachedFiles: [],
+    contextBlocks: [],
     currentConversationId: null,
     conversationHistory: [],
   });
@@ -86,7 +95,7 @@ export const useCompletion = () => {
     }
   });
   const promptHistoryIndexRef = useRef<number>(-1);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const isProcessingScreenshotRef = useRef(false);
   const screenshotConfigRef = useRef(screenshotConfiguration);
   const hasCheckedPermissionRef = useRef(false);
@@ -142,6 +151,48 @@ export const useCompletion = () => {
     setState((prev) => ({ ...prev, attachedFiles: [] }));
   }, []);
 
+  const addContextBlock = useCallback((block: ContextBlock) => {
+    setState((prev) => ({
+      ...prev,
+      contextBlocks: [...prev.contextBlocks, block],
+    }));
+  }, []);
+
+  const removeContextBlock = useCallback((blockId: string) => {
+    setState((prev) => ({
+      ...prev,
+      contextBlocks: prev.contextBlocks.filter((b) => b.id !== blockId),
+    }));
+  }, []);
+
+  const addTextFile = useCallback(
+    async (file: File) => {
+      if (file.size > MAX_BLOCK_BYTES) {
+        setState((prev) => ({
+          ...prev,
+          error: `${file.name} is larger than ${Math.round(
+            MAX_BLOCK_BYTES / 1024
+          )} KB. Attach a smaller file or paste the relevant section.`,
+        }));
+        return;
+      }
+      try {
+        const text = await file.text();
+        if (text.trim()) {
+          addContextBlock(createFileBlock(file.name, text));
+        }
+      } catch (error) {
+        setState((prev) => ({
+          ...prev,
+          error: `Could not read ${file.name}: ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
+        }));
+      }
+    },
+    [addContextBlock]
+  );
+
   const submit = useCallback(
     async (speechText?: string) => {
       const rawInput = speechText || state.input;
@@ -160,34 +211,40 @@ export const useCompletion = () => {
           response: "",
           error: null,
           attachedFiles: [],
+          contextBlocks: [],
           currentConversationId: null,
           conversationHistory: [],
         }));
         return;
       }
 
-      // Expand slash commands
+      // Expand slash commands. A bare command falls back to attached context
+      // when there is any, so the clipboard and file chips drive them.
+      const argFor = (command: string): string =>
+        trimmedInput.slice(command.length).trim();
+      const orContext = (text: string, whenEmpty: string): string =>
+        text || (state.contextBlocks.length > 0 ? "(use the attached context above)" : whenEmpty);
+      const matches = (command: string): boolean =>
+        trimmedInput === command || trimmedInput.startsWith(`${command} `);
+
       let input = trimmedInput;
-      if (trimmedInput.startsWith("/fix ") || trimmedInput === "/fix") {
-        const text = trimmedInput.slice(4).trim();
-        input = `Please fix grammar, spelling, clarity, and tone for the following text:\n\n${text || "(no text provided, please provide suggestions for writing improvements)"}`;
-      } else if (trimmedInput.startsWith("/commit") || trimmedInput === "/commit") {
-        const diffText = trimmedInput.slice(7).trim();
-        input = `You are an expert software engineer. Generate concise, conventional git commit message(s) (format: <type>(<scope>): <summary> followed by key bullet points) based on the following diff or changes:\n\n${diffText || "(Please analyze recent changes or generate conventional commit templates)"}`;
-      } else if (trimmedInput.startsWith("/refactor ") || trimmedInput === "/refactor") {
-        const codeText = trimmedInput.slice(9).trim();
-        input = `Please refactor the following code for maximum performance, readability, modularity, and modern best practices:\n\n${codeText || "(Please provide general refactoring guidelines)"}`;
-      } else if (trimmedInput.startsWith("/translate ") || trimmedInput.startsWith("/tr ")) {
+      if (matches("/fix")) {
+        input = `Please fix grammar, spelling, clarity, and tone for the following text:\n\n${orContext(argFor("/fix"), "(no text provided, please provide suggestions for writing improvements)")}`;
+      } else if (matches("/commit")) {
+        input = `You are an expert software engineer. Generate concise, conventional git commit message(s) (format: <type>(<scope>): <summary> followed by key bullet points) based on the following diff or changes:\n\n${orContext(argFor("/commit"), "(Please analyze recent changes or generate conventional commit templates)")}`;
+      } else if (matches("/refactor")) {
+        input = `Please refactor the following code for maximum performance, readability, modularity, and modern best practices:\n\n${orContext(argFor("/refactor"), "(Please provide general refactoring guidelines)")}`;
+      } else if (matches("/translate") || matches("/tr")) {
         const text = trimmedInput.replace(/^\/(translate|tr)\s*/, "").trim();
-        input = `Please accurately translate the following text into fluent English (or detected target language):\n\n${text}`;
-      } else if (trimmedInput.startsWith("/explain ")) {
-        input = `Please explain the following concept simply and clearly with practical examples:\n\n${trimmedInput.slice(9).trim()}`;
-      } else if (trimmedInput.startsWith("/code ")) {
-        input = `Please write clean, production-ready, well-commented code for:\n\n${trimmedInput.slice(6).trim()}`;
-      } else if (trimmedInput.startsWith("/summarize ")) {
-        input = `Please summarize the following text into concise bullet points and key takeaways:\n\n${trimmedInput.slice(11).trim()}`;
-      } else if (trimmedInput.startsWith("/regex ")) {
-        input = `Please explain or construct a regular expression pattern for:\n\n${trimmedInput.slice(7).trim()}`;
+        input = `Please accurately translate the following text into fluent English (or detected target language):\n\n${orContext(text, "(no text provided)")}`;
+      } else if (matches("/explain")) {
+        input = `Please explain the following concept simply and clearly with practical examples:\n\n${orContext(argFor("/explain"), "(no topic provided, ask what should be explained)")}`;
+      } else if (matches("/code")) {
+        input = `Please write clean, production-ready, well-commented code for:\n\n${orContext(argFor("/code"), "(no requirement provided, ask what should be built)")}`;
+      } else if (matches("/summarize")) {
+        input = `Please summarize the following text into concise bullet points and key takeaways:\n\n${orContext(argFor("/summarize"), "(no text provided, ask what should be summarized)")}`;
+      } else if (matches("/regex")) {
+        input = `Please explain or construct a regular expression pattern for:\n\n${orContext(argFor("/regex"), "(no pattern provided, ask what the pattern should match)")}`;
       }
 
       setPromptHistory((prev) => {
@@ -238,6 +295,11 @@ export const useCompletion = () => {
           });
         }
 
+        const attachedContext = renderBlocksAsText(state.contextBlocks);
+        const userMessage = attachedContext
+          ? `${attachedContext}\n\n${input}`
+          : input;
+
         let fullResponse = "";
 
         // Check if AI provider is configured
@@ -275,7 +337,7 @@ export const useCompletion = () => {
             selectedProvider: selectedAIProvider,
             systemPrompt: systemPrompt || undefined,
             history: messageHistory,
-            userMessage: input,
+            userMessage,
             imagesBase64,
             signal,
           })) {
@@ -348,6 +410,7 @@ export const useCompletion = () => {
     [
       state.input,
       state.attachedFiles,
+      state.contextBlocks,
       selectedAIProvider,
       allAiProviders,
       systemPrompt,
@@ -376,6 +439,7 @@ export const useCompletion = () => {
       response: "",
       error: null,
       attachedFiles: [],
+      contextBlocks: [],
     }));
   }, [cancel, keepEngaged]);
 
@@ -589,11 +653,12 @@ export const useCompletion = () => {
     const MAX_FILES = 6;
 
     files.forEach((file) => {
-      if (
-        file.type.startsWith("image/") &&
-        state.attachedFiles.length < MAX_FILES
-      ) {
-        addFile(file);
+      if (file.type.startsWith("image/")) {
+        if (state.attachedFiles.length < MAX_FILES) {
+          addFile(file);
+        }
+      } else if (isTextFile(file)) {
+        addTextFile(file);
       }
     });
 
@@ -781,7 +846,9 @@ export const useCompletion = () => {
         submit();
       }
     } else if (e.key === "ArrowUp") {
-      if (!state.response && promptHistory.length > 0) {
+      const field = e.currentTarget as HTMLTextAreaElement;
+      const caretAtStart = field.selectionStart === 0 && field.selectionEnd === 0;
+      if (!state.response && promptHistory.length > 0 && caretAtStart) {
         e.preventDefault();
         const nextIndex = Math.min(
           promptHistoryIndexRef.current + 1,
@@ -791,7 +858,11 @@ export const useCompletion = () => {
         setInput(promptHistory[nextIndex]);
       }
     } else if (e.key === "ArrowDown") {
-      if (!state.response) {
+      const field = e.currentTarget as HTMLTextAreaElement;
+      const caretAtEnd =
+        field.selectionStart === field.value.length &&
+        field.selectionEnd === field.value.length;
+      if (!state.response && caretAtEnd) {
         if (promptHistoryIndexRef.current > 0) {
           e.preventDefault();
           const nextIndex = promptHistoryIndexRef.current - 1;
@@ -836,9 +907,17 @@ export const useCompletion = () => {
 
         // Process all files
         await Promise.all(processedFiles.map((file) => addFile(file)));
+        return;
+      }
+
+      // A long paste belongs in context, not in a one-line prompt box
+      const pastedText = e.clipboardData?.getData("text/plain") ?? "";
+      if (pastedText.length > PASTE_AS_BLOCK_THRESHOLD) {
+        e.preventDefault();
+        addContextBlock(createPasteBlock(pastedText));
       }
     },
-    [state.attachedFiles.length, addFile]
+    [state.attachedFiles.length, addFile, addContextBlock]
   );
 
   const isPopoverOpen =
@@ -1098,6 +1177,9 @@ export const useCompletion = () => {
     addFile,
     removeFile,
     clearFiles,
+    contextBlocks: state.contextBlocks,
+    addContextBlock,
+    removeContextBlock,
     submit,
     cancel,
     reset,

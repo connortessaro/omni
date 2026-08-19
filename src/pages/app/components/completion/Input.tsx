@@ -1,19 +1,33 @@
-import { useState, useEffect } from "react";
-import { Loader2, XIcon, Clipboard } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Loader2, XIcon, Clipboard, FileCode2 } from "lucide-react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
   Button,
   ScrollArea,
-  Input as InputComponent,
+  Textarea,
   Markdown,
   Switch,
   CopyButton,
 } from "@/components";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
-import { playHapticClick, playActionChime } from "@/lib";
+import {
+  playHapticClick,
+  playActionChime,
+  createPasteBlock,
+  formatTokenCount,
+  PASTE_AS_BLOCK_THRESHOLD,
+} from "@/lib";
+
+/** Big enough for a real diff, small enough that reading it never stalls the HUD. */
+const CLIPBOARD_PEEK_LIMIT = 100_000;
+
+/** One line of the prompt box, matching the icon buttons beside it. */
+const PROMPT_MIN_HEIGHT = 36;
+const PROMPT_MAX_HEIGHT = 320;
+
 
 const SLASH_COMMANDS = [
   { command: "/fix", description: "Fix grammar & tone", example: "/fix <text>" },
@@ -48,8 +62,27 @@ export const Input = ({
   isHidden,
   keepEngaged,
   setKeepEngaged,
+  contextBlocks,
+  addContextBlock,
+  removeContextBlock,
 }: UseCompletionReturn & { isHidden: boolean }) => {
   const [clipboardSnippet, setClipboardSnippet] = useState<string | null>(null);
+
+  // WKWebView does not honor `field-sizing: content`, so grow the box here.
+  const growToFitContent = useCallback((element: HTMLTextAreaElement | null) => {
+    if (!element) return;
+    element.style.height = `${PROMPT_MIN_HEIGHT}px`;
+    if (!element.value) return;
+    if (element.scrollHeight <= element.clientHeight) return;
+    element.style.height = `${Math.min(
+      element.scrollHeight,
+      PROMPT_MAX_HEIGHT
+    )}px`;
+  }, []);
+
+  useEffect(() => {
+    growToFitContent(inputRef.current);
+  }, [input, growToFitContent, inputRef]);
 
   useEffect(() => {
     if (isPopoverOpen || input || isLoading || isHidden) {
@@ -60,7 +93,11 @@ export const Input = ({
     const checkClipboard = async () => {
       try {
         const text = await navigator.clipboard.readText();
-        if (text && text.trim().length >= 4 && text.trim().length <= 4000) {
+        if (
+          text &&
+          text.trim().length >= 4 &&
+          text.trim().length <= CLIPBOARD_PEEK_LIMIT
+        ) {
           setClipboardSnippet(text.trim());
         } else {
           setClipboardSnippet(null);
@@ -85,23 +122,54 @@ export const Input = ({
       >
         <PopoverTrigger asChild className="!border-none !bg-transparent">
           <div className="relative">
-            <InputComponent
-              ref={inputRef}
-              placeholder="Ask me anything or type / for commands..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => {
-                if (e.key === "Enter") playHapticClick();
-                handleKeyPress(e);
-              }}
-              onPaste={handlePaste}
-              disabled={isLoading || isHidden}
-              className={`${
-                currentConversationId && conversationHistory.length > 0
-                  ? "pr-14"
-                  : "pr-2"
-              }`}
-            />
+            {contextBlocks.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap items-center gap-1">
+                {contextBlocks.map((block) => (
+                  <span
+                    key={block.id}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-input/40 bg-muted/60 px-2 py-0.5 text-[10px] font-medium"
+                  >
+                    {block.kind === "paste" ? (
+                      <Clipboard className="size-3 shrink-0 text-cyan-400" />
+                    ) : (
+                      <FileCode2 className="size-3 shrink-0 text-cyan-400" />
+                    )}
+                    <span className="max-w-[150px] truncate">{block.label}</span>
+                    <span className="font-mono text-muted-foreground/70">
+                      {formatTokenCount(block.approxTokens)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeContextBlock(block.id)}
+                      title={`Remove ${block.label} from context`}
+                      className="cursor-pointer rounded text-muted-foreground/70 transition hover:text-destructive"
+                    >
+                      <XIcon className="size-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="relative">
+              <Textarea
+                ref={inputRef}
+                rows={1}
+                placeholder="Ask me anything or type / for commands..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) playHapticClick();
+                  handleKeyPress(e);
+                }}
+                onPaste={handlePaste}
+                disabled={isLoading || isHidden}
+                className={`h-9 min-h-9 resize-none overflow-y-auto border-primary/50 py-1 leading-snug focus-visible:border-ring/60 focus-visible:ring-ring dark:border-input/80 dark:focus-visible:ring-ring/60 ${
+                  currentConversationId && conversationHistory.length > 0
+                    ? "pr-14"
+                    : "pr-2"
+                }`}
+              />
 
             {/* Smart Clipboard Inline AI Actions */}
             {clipboardSnippet && !input && !isPopoverOpen && !isLoading && (
@@ -122,7 +190,12 @@ export const Input = ({
                       type="button"
                       onClick={() => {
                         playActionChime();
-                        setInput(`${action.prefix}${clipboardSnippet}`);
+                        if (clipboardSnippet.length > PASTE_AS_BLOCK_THRESHOLD) {
+                          addContextBlock(createPasteBlock(clipboardSnippet));
+                          setInput(action.prefix.trim());
+                        } else {
+                          setInput(`${action.prefix}${clipboardSnippet}`);
+                        }
                         setTimeout(() => {
                           inputRef.current?.focus();
                         }, 50);
@@ -172,27 +245,28 @@ export const Input = ({
               </div>
             )}
 
-            {/* Conversation thread indicator */}
-            {currentConversationId &&
-              conversationHistory.length > 0 &&
-              !isLoading && (
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <MessageHistory
-                    conversationHistory={conversationHistory}
-                    currentConversationId={currentConversationId}
-                    onStartNewConversation={startNewConversation}
-                    messageHistoryOpen={messageHistoryOpen}
-                    setMessageHistoryOpen={setMessageHistoryOpen}
-                  />
+              {/* Conversation thread indicator */}
+              {currentConversationId &&
+                conversationHistory.length > 0 &&
+                !isLoading && (
+                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <MessageHistory
+                      conversationHistory={conversationHistory}
+                      currentConversationId={currentConversationId}
+                      onStartNewConversation={startNewConversation}
+                      messageHistoryOpen={messageHistoryOpen}
+                      setMessageHistoryOpen={setMessageHistoryOpen}
+                    />
+                  </div>
+                )}
+
+              {/* Loading indicator */}
+              {isLoading && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 animate-pulse">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 </div>
               )}
-
-            {/* Loading indicator */}
-            {isLoading && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 animate-pulse">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            )}
+            </div>
           </div>
         </PopoverTrigger>
 
