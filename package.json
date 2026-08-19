@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "eval:typecheck": "tsc -p evals/tsconfig.json",
-    "eval:test": "node --test evals/graders/*.test.ts",
+    "eval:test": "node --test evals/graders/*.test.ts evals/unit/*.test.ts",
     "eval:dry-run": "node evals/scripts/dry-run.ts",
     "eval:run": "node evals/scripts/run-eval.ts",
     "hud:probe": "node dev-harness/probe.mjs"

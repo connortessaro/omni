@@ -68,6 +68,7 @@ export const Input = ({
   contextBlocks,
   addContextBlock,
   removeContextBlock,
+  historyNotice,
 }: UseCompletionReturn & { isHidden: boolean }) => {
   const [clipboardSnippet, setClipboardSnippet] = useState<string | null>(null);
 
@@ -343,6 +344,14 @@ export const Input = ({
               {error && (
                 <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
                   <strong>Error:</strong> {error}
+                </div>
+              )}
+              {historyNotice && (
+                <div
+                  data-slot="history-notice"
+                  className="mb-3 rounded-lg border border-input/40 bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+                >
+                  {historyNotice}
                 </div>
               )}
               {isLoading && (

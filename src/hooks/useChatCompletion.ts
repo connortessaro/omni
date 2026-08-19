@@ -10,6 +10,8 @@ import {
   generateMessageId,
   generateRequestId,
   getResponseSettings,
+  fitHistoryToBudget,
+  historyBudgetNotice,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -157,10 +159,17 @@ export const useChatCompletion = (
 
       try {
         // Prepare message history for the AI
-        const messageHistory = (messages?.messages || []).map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
+        const budgeted = fitHistoryToBudget(
+          (messages?.messages || []).map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          input
+        );
+        const messageHistory = budgeted.turns;
+        if (budgeted.droppedCount > 0) {
+          console.warn(historyBudgetNotice(budgeted.droppedCount));
+        }
 
         // Handle image attachments
         const imagesBase64: string[] = [];

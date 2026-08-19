@@ -21,6 +21,8 @@ import {
   renderBlocksAsText,
   MAX_BLOCK_BYTES,
   PASTE_AS_BLOCK_THRESHOLD,
+  fitHistoryToBudget,
+  historyBudgetNotice,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -57,6 +59,7 @@ interface CompletionState {
   error: string | null;
   attachedFiles: AttachedFile[];
   contextBlocks: ContextBlock[];
+  historyNotice: string | null;
   currentConversationId: string | null;
   conversationHistory: ChatMessage[];
 }
@@ -78,6 +81,7 @@ export const useCompletion = () => {
     error: null,
     attachedFiles: [],
     contextBlocks: [],
+    historyNotice: null,
     currentConversationId: null,
     conversationHistory: [],
   });
@@ -213,6 +217,7 @@ export const useCompletion = () => {
           error: null,
           attachedFiles: [],
           contextBlocks: [],
+          historyNotice: null,
           currentConversationId: null,
           conversationHistory: [],
         }));
@@ -280,10 +285,22 @@ export const useCompletion = () => {
       const signal = abortControllerRef.current.signal;
 
       try {
-        // Prepare message history for the AI
-        const messageHistory = state.conversationHistory.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
+        // Trim history to what the model can actually accept. Sending the
+        // whole conversation every turn used to hard-fail on a context error.
+        const budgeted = fitHistoryToBudget(
+          state.conversationHistory.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          rawInput
+        );
+        const messageHistory = budgeted.turns;
+        setState((prev) => ({
+          ...prev,
+          historyNotice:
+            budgeted.droppedCount > 0
+              ? historyBudgetNotice(budgeted.droppedCount)
+              : null,
         }));
 
         // Handle image attachments
@@ -441,6 +458,7 @@ export const useCompletion = () => {
       error: null,
       attachedFiles: [],
       contextBlocks: [],
+      historyNotice: null,
     }));
   }, [cancel, keepEngaged]);
 
@@ -704,10 +722,20 @@ export const useCompletion = () => {
           const signal = abortControllerRef.current.signal;
 
           try {
-            // Prepare message history for the AI
-            const messageHistory = state.conversationHistory.map((msg) => ({
-              role: msg.role,
-              content: msg.content,
+            const budgeted = fitHistoryToBudget(
+              state.conversationHistory.map((msg) => ({
+                role: msg.role,
+                content: msg.content,
+              })),
+              prompt
+            );
+            const messageHistory = budgeted.turns;
+            setState((prev) => ({
+              ...prev,
+              historyNotice:
+                budgeted.droppedCount > 0
+                  ? historyBudgetNotice(budgeted.droppedCount)
+                  : null,
             }));
 
             let fullResponse = "";
@@ -1184,6 +1212,7 @@ export const useCompletion = () => {
     contextBlocks: state.contextBlocks,
     addContextBlock,
     removeContextBlock,
+    historyNotice: state.historyNotice,
     submit,
     cancel,
     reset,

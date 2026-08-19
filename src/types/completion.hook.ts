@@ -55,6 +55,8 @@ export interface UseCompletionReturn {
   addContextBlock: (block: ContextBlock) => void;
   /** Function to remove a block by its ID */
   removeContextBlock: (blockId: string) => void;
+  /** Set when earlier turns were dropped to fit the model's context window */
+  historyNotice: string | null;
 
   // Completion actions
   /** Function to submit the completion request, optionally with speech text */

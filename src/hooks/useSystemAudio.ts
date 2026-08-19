@@ -16,6 +16,8 @@ import {
   CONVERSATION_SAVE_DEBOUNCE_MS,
   generateConversationId,
   generateMessageId,
+  fitHistoryToBudget,
+  historyBudgetNotice,
 } from "@/lib";
 import { Message } from "@/types/completion";
 
@@ -277,9 +279,17 @@ export function useSystemAudio() {
                   ? systemPrompt || DEFAULT_SYSTEM_PROMPT
                   : contextContent || DEFAULT_SYSTEM_PROMPT;
 
-                const previousMessages = conversation.messages.map((msg) => {
-                  return { role: msg.role, content: msg.content };
-                });
+                const budgeted = fitHistoryToBudget(
+                  conversation.messages.map((msg) => ({
+                    role: msg.role,
+                    content: msg.content,
+                  })),
+                  transcription
+                );
+                const previousMessages = budgeted.turns;
+                if (budgeted.droppedCount > 0) {
+                  console.warn(historyBudgetNotice(budgeted.droppedCount));
+                }
 
                 await processWithAI(
                   transcription,
@@ -417,9 +427,17 @@ export function useSystemAudio() {
       }
     }
 
-    const previousMessages = updatedMessages.map((msg) => {
-      return { role: msg.role, content: msg.content };
-    });
+    const budgeted = fitHistoryToBudget(
+      updatedMessages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      })),
+      action
+    );
+    const previousMessages = budgeted.turns;
+    if (budgeted.droppedCount > 0) {
+      console.warn(historyBudgetNotice(budgeted.droppedCount));
+    }
 
     await processWithAI(action, effectiveSystemPrompt, previousMessages);
   };
