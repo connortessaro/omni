@@ -34,3 +34,6 @@ evals/.cache/
 evals/.tmp/
 # Generated HUD probe screenshots
 dev-harness/out/
+
+# Local session handoff, not for a public repo
+.claude/
