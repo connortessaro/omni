@@ -11,7 +11,6 @@ import {
 } from "@/config";
 import {
   safeLocalStorage,
-  shouldUseOmniAPI,
   generateConversationTitle,
   saveConversation,
   CONVERSATION_SAVE_DEBOUNCE_MS,
@@ -235,8 +234,7 @@ export function useSystemAudio() {
             }
             const audioBlob = new Blob([bytes], { type: "audio/wav" });
 
-            const useOmniAPI = await shouldUseOmniAPI();
-            if (!selectedSttProvider.provider && !useOmniAPI) {
+            if (!selectedSttProvider.provider) {
               console.warn("No speech provider selected");
               return;
             }
@@ -244,7 +242,7 @@ export function useSystemAudio() {
             const providerConfig = allSttProviders.find(
               (p) => p.id === selectedSttProvider.provider
             );
-            if (!providerConfig && !useOmniAPI) {
+            if (!providerConfig) {
               console.warn("Speech provider configuration not found");
               return;
             }
@@ -253,7 +251,7 @@ export function useSystemAudio() {
 
             // Add timeout wrapper for STT request (30 seconds)
             const sttPromise = fetchSTT({
-              provider: useOmniAPI ? undefined : providerConfig,
+              provider: providerConfig,
               selectedProvider: selectedSttProvider,
               audio: audioBlob,
             });
@@ -486,8 +484,7 @@ export function useSystemAudio() {
 
         let fullResponse = "";
 
-        const useOmniAPI = await shouldUseOmniAPI();
-        if (!selectedAIProvider.provider && !useOmniAPI) {
+        if (!selectedAIProvider.provider) {
           setError("No AI provider selected.");
           return;
         }
@@ -495,14 +492,14 @@ export function useSystemAudio() {
         const provider = allAiProviders.find(
           (p) => p.id === selectedAIProvider.provider
         );
-        if (!provider && !useOmniAPI) {
+        if (!provider) {
           setError("AI provider config not found.");
           return;
         }
 
         try {
           for await (const chunk of fetchAIResponse({
-            provider: useOmniAPI ? undefined : provider,
+            provider: provider,
             selectedProvider: selectedAIProvider,
             systemPrompt: prompt,
             history: previousMessages,

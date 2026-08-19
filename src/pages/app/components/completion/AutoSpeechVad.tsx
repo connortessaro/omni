@@ -1,4 +1,4 @@
-import { fetchSTT, shouldUseOmniAPI } from "@/lib";
+import { fetchSTT } from "@/lib";
 import { UseCompletionReturn } from "@/types";
 import { useMicVAD } from "@ricky0123/vad-react";
 import { LoaderCircleIcon, MicIcon, MicOffIcon } from "lucide-react";
@@ -38,10 +38,9 @@ const AutoSpeechVADInternal = ({
         const audioBlob = floatArrayToWav(audio, 16000, "wav");
 
         let transcription: string;
-        const useOmniAPI = await shouldUseOmniAPI();
 
         // Check if we have a configured speech provider
-        if (!selectedSttProvider.provider && !useOmniAPI) {
+        if (!selectedSttProvider.provider) {
           console.warn("No speech provider selected");
           setState((prev: any) => ({
             ...prev,
@@ -55,7 +54,7 @@ const AutoSpeechVADInternal = ({
           (p) => p.id === selectedSttProvider.provider
         );
 
-        if (!providerConfig && !useOmniAPI) {
+        if (!providerConfig) {
           console.warn("Selected speech provider configuration not found");
           setState((prev: any) => ({
             ...prev,
@@ -69,7 +68,7 @@ const AutoSpeechVADInternal = ({
 
         // Use the fetchSTT function for all providers
         transcription = await fetchSTT({
-          provider: useOmniAPI ? undefined : providerConfig,
+          provider: providerConfig,
           selectedProvider: selectedSttProvider,
           audio: audioBlob,
         });

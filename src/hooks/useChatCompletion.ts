@@ -6,7 +6,6 @@ import {
   saveConversation,
   getConversationById,
   generateConversationTitle,
-  shouldUseOmniAPI,
   MESSAGE_ID_OFFSET,
   generateMessageId,
   generateRequestId,
@@ -60,7 +59,6 @@ export const useChatCompletion = (
     selectedSttProvider,
     allSttProviders,
     selectedAudioDevices,
-    hasActiveLicense,
   } = useApp();
 
   const [state, setState] = useState<ChatCompletionState>({
@@ -174,9 +172,8 @@ export const useChatCompletion = (
           });
         }
 
-        const useOmniAPI = await shouldUseOmniAPI();
         // Check if AI provider is configured
-        if (!selectedAIProvider.provider && !useOmniAPI) {
+        if (!selectedAIProvider.provider) {
           setState((prev) => ({
             ...prev,
             error: "Please select an AI provider in settings",
@@ -187,7 +184,7 @@ export const useChatCompletion = (
         const provider = allAiProviders.find(
           (p) => p.id === selectedAIProvider.provider
         );
-        if (!provider && !useOmniAPI) {
+        if (!provider) {
           setState((prev) => ({
             ...prev,
             error: "Invalid provider selected",
@@ -227,7 +224,7 @@ export const useChatCompletion = (
         try {
           // Use the fetchAIResponse function with signal
           for await (const chunk of fetchAIResponse({
-            provider: useOmniAPI ? undefined : provider,
+            provider: provider,
             selectedProvider: selectedAIProvider,
             systemPrompt: systemPrompt || undefined,
             history: messageHistory,
@@ -606,7 +603,7 @@ export const useChatCompletion = (
         setIsScreenshotLoading(false);
       }
     }
-  }, [handleScreenshotSubmit, hasActiveLicense]);
+  }, [handleScreenshotSubmit]);
 
   useEffect(() => {
     let unlisten: any;
@@ -710,6 +707,5 @@ export const useChatCompletion = (
     selectedSttProvider,
     allSttProviders,
     selectedAudioDevices,
-    hasActiveLicense,
   };
 };

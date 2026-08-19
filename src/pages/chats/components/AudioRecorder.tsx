@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components";
 import { AudioVisualizer } from "@/pages/app/components/speech/audio-visualizer";
-import { shouldUseOmniAPI, fetchSTT } from "@/lib";
+import { fetchSTT } from "@/lib";
 import { useApp } from "@/contexts";
 import { StopCircle, Send } from "lucide-react";
 
@@ -149,13 +149,12 @@ export const AudioRecorder = ({
     try {
       const audioBlob = new Blob(chunks, { type: mimeType });
 
-      const useOmniAPI = await shouldUseOmniAPI();
       const provider = allSttProviders.find(
         (p) => p.id === selectedSttProvider.provider
       );
 
       const text = await fetchSTT({
-        provider: useOmniAPI ? undefined : provider,
+        provider: provider,
         selectedProvider: selectedSttProvider,
         audio: audioBlob,
       });

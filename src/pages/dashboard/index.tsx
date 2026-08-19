@@ -1,64 +1,54 @@
-import { useCallback, useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { OmniApiSetup, Usage } from "./components";
+import { useNavigate } from "react-router-dom";
+import { Button, Card } from "@/components";
 import { PageLayout } from "@/layouts";
 import { useApp } from "@/contexts";
+import { CheckCircle2, Code, AlertCircle } from "lucide-react";
 
 const Dashboard = () => {
-  const { hasActiveLicense } = useApp();
-  const [activity, setActivity] = useState<any>(null);
-  const [loadingActivity, setLoadingActivity] = useState(false);
+  const navigate = useNavigate();
+  const { selectedAIProvider, selectedSttProvider, allAiProviders, allSttProviders } =
+    useApp();
 
-  const fetchActivity = useCallback(async () => {
-    if (!hasActiveLicense) {
-      setActivity({ data: [], total_tokens_used: 0 });
-      return;
-    }
-    setLoadingActivity(true);
-    try {
-      const response = await invoke("get_activity");
-      const responseData: any = response;
-      if (responseData && responseData.success) {
-        setActivity(responseData);
-      } else {
-        setActivity({ data: [], total_tokens_used: 0 });
-      }
-    } catch (error) {
-      setActivity({ data: [], total_tokens_used: 0 });
-    } finally {
-      setLoadingActivity(false);
-    }
-  }, [hasActiveLicense]);
+  const aiProvider = allAiProviders.find(
+    (p) => p.id === selectedAIProvider.provider
+  );
+  const sttProvider = allSttProviders.find(
+    (p) => p.id === selectedSttProvider.provider
+  );
 
-  useEffect(() => {
-    if (hasActiveLicense) {
-      fetchActivity();
-    } else {
-      setActivity(null);
-    }
-  }, [fetchActivity, hasActiveLicense]);
-
-  const activityData =
-    activity && Array.isArray(activity.data) ? activity.data : [];
-  const totalTokens =
-    activity && typeof activity.total_tokens_used === "number"
-      ? activity.total_tokens_used
-      : 0;
+  const rows = [
+    { label: "AI provider", value: aiProvider?.id },
+    { label: "Speech provider", value: sttProvider?.id },
+  ];
 
   return (
     <PageLayout
       title="Dashboard"
-      description="Manage models, API keys, and monitor usage."
+      description="Omni runs on your own provider keys. Nothing leaves this machine except the requests you make."
     >
-      {/* Omni Cloud API Setup */}
-      <OmniApiSetup />
+      <Card className="shadow-none p-4 border border-border/70 rounded-xl space-y-3">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center gap-3">
+            {row.value ? (
+              <CheckCircle2 className="size-4 text-primary" />
+            ) : (
+              <AlertCircle className="size-4 text-muted-foreground" />
+            )}
+            <p className="flex-1 text-xs lg:text-sm font-medium">{row.label}</p>
+            <code className="px-3 py-1.5 bg-muted rounded text-xs lg:text-sm font-mono">
+              {row.value ?? "not configured"}
+            </code>
+          </div>
+        ))}
+      </Card>
 
-      <Usage
-        loading={loadingActivity}
-        onRefresh={fetchActivity}
-        data={activityData}
-        totalTokens={totalTokens}
-      />
+      <Button
+        variant="outline"
+        className="w-fit"
+        onClick={() => navigate("/dev-space")}
+      >
+        <Code className="h-4 w-4" /> Configure providers
+      </Button>
     </PageLayout>
   );
 };

@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { DeleteSystemPrompt } from "./Delete";
 import { CreateEditDialog } from "./CreateEditDialog";
-import { OmniPrompts } from "./OmniPrompts";
 import { useState } from "react";
 import { PageLayout } from "@/layouts";
 
@@ -295,7 +294,6 @@ const SystemPrompts = () => {
       />
 
       {/* Preset Default Prompts */}
-      <OmniPrompts />
     </PageLayout>
   );
 };
