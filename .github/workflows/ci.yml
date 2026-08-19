@@ -9,6 +9,7 @@ on:
 jobs:
   check-frontend:
     name: Frontend Typecheck, Tests & Build
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +39,7 @@ jobs:
 
   check-hud:
     name: HUD Layout Probe (WebKit)
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,14 +54,17 @@ jobs:
       # CSS that WebKit does not, so a Chromium run passes on real layout bugs.
       - name: Install WebKit
         run: npx playwright install --with-deps webkit
+      # Redirecting the background server's output matters: a child that inherits
+      # the step's stdout holds the pipe open and the step never finishes.
       - name: Start dev server
         run: |
-          npm run dev &
+          nohup npm run dev > vite-dev.log 2>&1 &
           for _ in $(seq 1 60); do
             curl -sf http://localhost:1420/ >/dev/null && exit 0
             sleep 1
           done
           echo "dev server never came up"
+          cat vite-dev.log
           exit 1
       - name: Probe HUD layout
         run: npm run hud:probe
@@ -68,11 +73,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hud-screenshots
-          path: dev-harness/out/
+          path: |
+            dev-harness/out/
+            vite-dev.log
           if-no-files-found: warn
 
   check-rust:
     name: Rust Backend Check & Tests
+    timeout-minutes: 25
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
