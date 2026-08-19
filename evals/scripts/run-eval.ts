@@ -11,18 +11,24 @@ import type { Task } from "../types.ts";
 
 const PASS_BAR = 0.7;
 
-function parseArgs(argv: string[]): { category: string | null; taskIds: string[] | null } {
+function parseArgs(argv: string[]): {
+  category: string | null;
+  taskIds: string[] | null;
+  showResponse: boolean;
+} {
   let category: string | null = null;
   let taskIds: string[] | null = null;
+  let showResponse = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--category" && argv[i + 1]) category = argv[i + 1];
     if (argv[i] === "--task" && argv[i + 1]) taskIds = argv[i + 1].split(",");
+    if (argv[i] === "--show-response") showResponse = true;
   }
-  return { category, taskIds };
+  return { category, taskIds, showResponse };
 }
 
 async function main() {
-  const { category, taskIds } = parseArgs(process.argv.slice(2));
+  const { category, taskIds, showResponse } = parseArgs(process.argv.slice(2));
 
   let resolved;
   try {
@@ -79,6 +85,11 @@ async function main() {
     );
     if (runResult.errorText) {
       console.log(`      -> fetchAIResponse error: ${runResult.errorText}`);
+    }
+    // A grader that fails for the wrong reason is worse than no grader, so make
+    // it cheap to read what the model actually said.
+    if (showResponse) {
+      console.log(`\n--- response for ${task.id} ---\n${runResult.responseText}\n--- end ---\n`);
     }
   }
 

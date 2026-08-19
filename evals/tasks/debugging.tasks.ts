@@ -26,7 +26,15 @@ export const debuggingTasks: Task[] = [
     grader: {
       type: "debug-fix",
       language: "javascript",
-      rootCauseKeywords: ["off-by-one", "off by one", "boundary", "<= end", "half-open", "exclusive"],
+      rootCauseKeywords: [
+        "off-by-one",
+        "off by one",
+        "boundary",
+        "<= end",
+        "half-open",
+        "exclusive",
+        ["loop", "last element"],
+      ],
       cases: [
         {
           description: "full range",
@@ -98,7 +106,7 @@ export const debuggingTasks: Task[] = [
     grader: {
       type: "debug-fix",
       language: "javascript",
-      rootCauseKeywords: ["await", "async", "promise", "unresolved"],
+      rootCauseKeywords: ["await", "async", "promise", "unresolved", ["pending", "return"]],
       cases: [
         {
           description: "known user",
@@ -183,7 +191,13 @@ export const debuggingTasks: Task[] = [
     grader: {
       type: "debug-fix",
       language: "javascript",
-      rootCauseKeywords: ["lexicograph", "string sort", "comparator", "numeric sort", "default sort"],
+      rootCauseKeywords: [
+        "lexicograph",
+        "comparator",
+        "compare function",
+        ["string", "sort"],
+        ["character", "numeric"],
+      ],
       cases: [
         { description: "two-digit numbers", calls: [{ fn: "sortDescending", args: [[10, 1, 2, 21]] }], expected: [[21, 10, 2, 1]] },
         { description: "single digits", calls: [{ fn: "sortDescending", args: [[5, 3, 9, 1]] }], expected: [[9, 5, 3, 1]] },

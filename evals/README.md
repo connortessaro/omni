@@ -195,3 +195,62 @@ committed harness).
   `node <file>.cjs`, 5s timeout) can execute it directly with no extra
   toolchain. Extending to other languages means adding a runner per
   language, not changing the grading model.
+
+## Baseline
+
+First live run, 2026-08-19, `gemini-2.5-flash` via the shipped `gemini`
+provider (Google's OpenAI-compatible endpoint):
+
+| category | score |
+|---|---|
+| coding | 8/8 |
+| debugging | 6/6 |
+| reasoning | 6/6 |
+| long-context | 4/4 |
+| vision | 3 skipped, no fixtures |
+| **automated total** | **24/24** |
+
+Read that number with suspicion rather than satisfaction. **A suite that scores
+100% on its first run has no headroom**, so it cannot currently distinguish a
+real regression from noise, and it says more about the tasks being too easy for
+a current model than about Omni. Two things it did prove: Omni's production
+request path works end to end against a real provider, and generated code
+survives execution against test cases.
+
+Run-to-run variance is real. Three consecutive full runs scored 23/24, 23/24,
+and 24/24 with no code changes between the last two, so a single failing task is
+not by itself evidence of anything. Compare distributions, not single runs.
+
+To make this suite useful, tasks need to get harder until the score lands
+somewhere in the 60-80% range, where movement is informative.
+
+## Running it with a key
+
+The runner reads `OMNI_EVAL_PROVIDER`, `OMNI_EVAL_API_KEY`, and optionally
+`OMNI_EVAL_MODEL`. Keep the credential in a mode-600 file outside the repo and
+source it, so it never lands in shell history or a tracked file:
+
+```bash
+# ~/.config/omni/eval.env, chmod 600
+OMNI_EVAL_PROVIDER=gemini
+OMNI_EVAL_API_KEY=...
+```
+
+```bash
+set -a; . ~/.config/omni/eval.env; set +a
+npm run eval:run                                  # everything
+npm run eval:run -- --category debugging          # one category
+npm run eval:run -- --task debug-missing-await --show-response
+```
+
+`--show-response` prints what the model actually said. Reach for it whenever a
+task fails: a grader failing for the wrong reason is worse than no grader, and
+that is exactly what happened on the first run. `debug-lexicographic-sort` was
+scored a miss for a completely correct answer, because the keyword list demanded
+the literal phrase "string sort" while the model wrote "sorts elements as
+strings by default". Keyword entries now accept an array of terms that must
+co-occur, so a concept can be matched without pinning one phrasing.
+
+This suite is deliberately **not** in CI: it costs money per run and needs a
+credential. CI runs the graders, the harness unit tests, and the request-assembly
+dry run, all of which are free and deterministic.

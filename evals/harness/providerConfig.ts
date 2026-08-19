@@ -24,7 +24,7 @@ const DEFAULT_MODELS: Record<string, string> = {
   openai: "gpt-4o-mini",
   claude: "claude-3-5-haiku-latest",
   grok: "grok-2-latest",
-  gemini: "gemini-1.5-flash",
+  gemini: "gemini-2.5-flash",
   mistral: "mistral-small-latest",
   cohere: "command-r",
   groq: "llama-3.1-8b-instant",

@@ -28,7 +28,12 @@ export interface DebugFixGrader {
   type: "debug-fix";
   language: "javascript";
   cases: CodeExecCase[];
-  rootCauseKeywords: string[];
+  /**
+   * Each entry is satisfied independently (OR). A string entry matches as a
+   * substring; an array entry requires every term to appear (AND), which lets a
+   * concept be matched without pinning the model to one exact phrasing.
+   */
+  rootCauseKeywords: (string | string[])[];
 }
 
 export interface NumericGrader {
