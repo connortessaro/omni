@@ -49,6 +49,19 @@ const PRIVATE_HOST_PATTERNS = [
 const MAX_FETCH_BYTES = 200_000;
 
 /**
+ * Redirects are followed by hand, one hop at a time.
+ *
+ * Letting the client follow them automatically would mean only the first URL is
+ * ever checked: a public address can 302 to loopback or to a cloud metadata
+ * endpoint, and the block list never sees it. Each hop is validated before it is
+ * requested.
+ */
+const MAX_REDIRECTS = 3;
+
+const isRedirect = (status: number): boolean =>
+  status >= 300 && status < 400;
+
+/**
  * Strips tags and collapses whitespace. Not a parser: the goal is getting
  * readable text into the context window, not fidelity.
  */
@@ -88,20 +101,45 @@ const fetchUrl: ToolDefinition = {
   argsHint: '{"url":"https://example.com/page"}',
   async run(args) {
     const url = String(args.url ?? "");
-    const blocked = isBlockedUrl(url);
-    if (blocked) throw new Error(`Cannot fetch ${url}: ${blocked}`);
+    let target = url;
 
-    const response = await tauriFetch(url, {
-      method: "GET",
-      headers: { Accept: "text/html,text/plain,application/json" },
-    });
-    if (!response.ok) {
-      throw new Error(`${url} returned ${response.status}`);
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const hopBlocked = isBlockedUrl(target);
+      if (hopBlocked) {
+        throw new Error(
+          hop === 0
+            ? `Cannot fetch ${target}: ${hopBlocked}`
+            : `Cannot follow redirect to ${target}: ${hopBlocked}`
+        );
+      }
+
+      const response = await tauriFetch(target, {
+        method: "GET",
+        maxRedirections: 0,
+        headers: { Accept: "text/html,text/plain,application/json" },
+      });
+
+      if (isRedirect(response.status)) {
+        const location = response.headers.get("location");
+        if (!location) {
+          throw new Error(`${target} redirected without a location header`);
+        }
+        // Location may be relative, and must be resolved before validation.
+        target = new URL(location, target).toString();
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`${target} returned ${response.status}`);
+      }
+
+      const body = (await response.text()).slice(0, MAX_FETCH_BYTES);
+      const looksHtml =
+        /^\s*<(!doctype|html)/i.test(body) || body.includes("</p>");
+      return looksHtml ? htmlToText(body) : body;
     }
 
-    const body = (await response.text()).slice(0, MAX_FETCH_BYTES);
-    const looksHtml = /^\s*<(!doctype|html)/i.test(body) || body.includes("</p>");
-    return looksHtml ? htmlToText(body) : body;
+    throw new Error(`Gave up after ${MAX_REDIRECTS} redirects from ${url}`);
   },
 };
 

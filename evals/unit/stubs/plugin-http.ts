@@ -16,6 +16,7 @@ interface Reply {
   status: number;
   body: unknown;
   text?: string;
+  headers?: Record<string, string>;
 }
 
 type Responder = (url: string) => Reply;
@@ -63,9 +64,13 @@ export const fetch = async (
   });
 
   const reply = store.responder(url);
+  const headers = reply.headers ?? {};
   return {
     ok: reply.status >= 200 && reply.status < 300,
     status: reply.status,
+    headers: {
+      get: (name: string) => headers[name] ?? headers[name.toLowerCase()] ?? null,
+    },
     json: async () => reply.body,
     text: async () => reply.text ?? JSON.stringify(reply.body),
   };

@@ -8,7 +8,14 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadSrcModule } from "../harness/loadSrcModule.ts";
 import { installMemoryLocalStorage } from "../harness/fakeGlobals.ts";
-import { replyWith, reset as resetHttp } from "./stubs/plugin-http.ts";
+import {
+  replyWith,
+  requests as httpRequestLog,
+  reset as resetHttp,
+  setResponder,
+} from "./stubs/plugin-http.ts";
+
+const httpRequests = () => httpRequestLog;
 import { reset as resetSql, setSelectHandler } from "./stubs/plugin-sql.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -318,6 +325,103 @@ test("search_chat_history reads real conversations through the database layer", 
   assert.equal(out.results[0]?.result.ok, true);
   assert.match(out.results[0]?.result.content ?? "", /Postgres work/);
   assert.match(out.results[0]?.result.content ?? "", /migration safely/);
+});
+
+test("a redirect into a private address is refused, not followed", async () => {
+  // The block list only ever sees the first URL if the client follows redirects
+  // itself, so a public host can bounce the request to a metadata endpoint.
+  const attacks = [
+    { from: "https://evil.example/go", to: "http://169.254.169.254/latest/meta-data/" },
+    { from: "https://evil.example/go", to: "http://127.0.0.1:8080/admin" },
+    { from: "https://evil.example/go", to: "http://10.0.0.1/" },
+  ];
+
+  for (const attack of attacks) {
+    resetHttp();
+    setResponder((url) => {
+      if (url === attack.from) {
+        return { status: 302, body: "", headers: { location: attack.to } };
+      }
+      return { status: 200, body: "SECRET CREDENTIALS" };
+    });
+
+    const model = scriptedModel([
+      toolBlock("fetch_url", { url: attack.from }),
+      "done",
+    ]);
+    const out = await collect(
+      runAgentLoop({ ...baseParams, fetchAIResponse: model.fetchAIResponse })
+    );
+
+    assert.equal(out.results[0]?.result.ok, false, `${attack.to} should be refused`);
+    assert.match(
+      out.results[0]?.result.content ?? "",
+      /Cannot follow redirect/,
+      `${attack.to} should be refused as a redirect`
+    );
+    assert.ok(
+      !httpRequests().some((request) => request.url === attack.to),
+      `${attack.to} must never actually be requested`
+    );
+  }
+});
+
+test("a redirect to another public address is followed", async () => {
+  setResponder((url) => {
+    if (url === "https://example.com/old") {
+      return { status: 301, body: "", headers: { location: "/new" } };
+    }
+    return { status: 200, body: "the moved content" };
+  });
+
+  const model = scriptedModel([
+    toolBlock("fetch_url", { url: "https://example.com/old" }),
+    "read it",
+  ]);
+  const out = await collect(
+    runAgentLoop({ ...baseParams, fetchAIResponse: model.fetchAIResponse })
+  );
+
+  assert.equal(out.results[0]?.result.ok, true);
+  assert.match(out.results[0]?.result.content ?? "", /the moved content/);
+  assert.ok(
+    httpRequests().some((r) => r.url === "https://example.com/new"),
+    "a relative location should resolve against the current url"
+  );
+});
+
+test("a redirect loop gives up instead of spinning", async () => {
+  setResponder(() => ({
+    status: 302,
+    body: "",
+    headers: { location: "https://example.com/loop" },
+  }));
+
+  const model = scriptedModel([
+    toolBlock("fetch_url", { url: "https://example.com/loop" }),
+    "done",
+  ]);
+  const out = await collect(
+    runAgentLoop({ ...baseParams, fetchAIResponse: model.fetchAIResponse })
+  );
+
+  assert.equal(out.results[0]?.result.ok, false);
+  assert.match(out.results[0]?.result.content ?? "", /Gave up after \d+ redirects/);
+});
+
+test("a redirect with no location header is an error", async () => {
+  setResponder(() => ({ status: 302, body: "" }));
+
+  const model = scriptedModel([
+    toolBlock("fetch_url", { url: "https://example.com/x" }),
+    "done",
+  ]);
+  const out = await collect(
+    runAgentLoop({ ...baseParams, fetchAIResponse: model.fetchAIResponse })
+  );
+
+  assert.equal(out.results[0]?.result.ok, false);
+  assert.match(out.results[0]?.result.content ?? "", /without a location header/);
 });
 
 test("fetch_url refuses private and loopback addresses", async () => {
