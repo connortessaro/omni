@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/omni-icon.png" width="120" height="120" alt="Omni Icon" style="border-radius: 26px;" />
+<img src="./assets/omni-icon.png" width="128" height="128" alt="Omni icon" />
 
 # Omni ⚡
 
