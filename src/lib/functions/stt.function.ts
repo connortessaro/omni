@@ -151,7 +151,10 @@ export async function fetchSTT(params: STTParams): Promise<string> {
       body = JSON.stringify(deepVariableReplacer(dataObj, allVariables));
     }
 
-    const fetchFunction = url?.includes("http") ? fetch : tauriFetch;
+    // Always the Rust client, never the webview's fetch: it bypasses CORS (most
+    // provider APIs send no CORS headers) and it keeps the webview with no
+    // outbound network at all, so injected script has nowhere to send a key.
+    const fetchFunction = tauriFetch;
 
     // Send request
     let response: Response;

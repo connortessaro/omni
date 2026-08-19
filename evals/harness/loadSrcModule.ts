@@ -10,6 +10,20 @@ const CACHE_DIR = path.join(REPO_ROOT, "evals", ".cache");
 const TSCONFIG_PATH = path.join(REPO_ROOT, "tsconfig.json");
 
 /**
+ * Production sends every network request through @tauri-apps/plugin-http, which
+ * cannot run outside Tauri, so it is aliased to a Node passthrough by default.
+ * The passthrough calls globalThis.fetch, which means a script that stubs the
+ * global (the dry run) still intercepts everything, and a script that does not
+ * (a live run) reaches the real network. Callers can override this to point at a
+ * recording stub instead.
+ */
+const TAURI_HTTP_SPECIFIER = "@tauri-apps/plugin-http";
+const NODE_HTTP_PASSTHROUGH = path.join(
+  __dirname,
+  "node-http-passthrough.mjs"
+);
+
+/**
  * Bundles a single file from the real `src/` tree with esbuild (honoring the
  * project's own tsconfig `@/*` path aliases) and dynamically imports the
  * result. This is how the harness gets at Omni's production request-assembly
@@ -48,7 +62,10 @@ export async function loadSrcModule<T>(
     format: "esm",
     target: "node18",
     packages: "external",
-    alias: options.alias,
+    alias: {
+      [TAURI_HTTP_SPECIFIER]: NODE_HTTP_PASSTHROUGH,
+      ...options.alias,
+    },
     tsconfig: TSCONFIG_PATH,
     logLevel: "silent",
   });

@@ -30,7 +30,10 @@
         "shadow": false
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420; object-src 'none'; base-uri 'self'"
+    }
   },
   "bundle": {
     "active": true,
@@ -43,12 +46,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["info.plist"],
-    "macOS": { "minimumSystemVersion": "10.13" }
+    "resources": [
+      "info.plist"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.13"
+    }
   },
   "plugins": {
     "sql": {
-      "preload": ["sqlite:omni.db"]
+      "preload": [
+        "sqlite:omni.db"
+      ]
     }
   }
 }

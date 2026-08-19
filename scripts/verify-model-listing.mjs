@@ -5,11 +5,8 @@
 //   set -a; . ~/.config/omni/eval.env; set +a
 //   node scripts/verify-model-listing.mjs
 //   node scripts/verify-model-listing.mjs --provider openai
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { loadSrcModule } from "../evals/harness/loadSrcModule.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 const arg = (name) => {
   const index = process.argv.indexOf(`--${name}`);
@@ -29,11 +26,7 @@ if (!providerId) {
 // listModels reads a key out of the provider's configured variables.
 const variables = { API_KEY: apiKey ?? "" };
 
-const { listModels } = await loadSrcModule("lib/functions/models.function.ts", {
-  alias: {
-    "@tauri-apps/plugin-http": join(HERE, "node-http-passthrough.mjs"),
-  },
-});
+const { listModels } = await loadSrcModule("lib/functions/models.function.ts");
 
 const { AI_PROVIDERS } = await loadSrcModule(
   "config/ai-providers.constants.ts"

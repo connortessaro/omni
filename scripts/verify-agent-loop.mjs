@@ -13,7 +13,6 @@ import { loadSrcModule } from "../evals/harness/loadSrcModule.ts";
 import { resolveProviderFromEnv } from "../evals/harness/providerConfig.ts";
 import { installMemoryLocalStorage } from "../evals/harness/fakeGlobals.ts";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
 const TARGET = "https://api.github.com/repos/connortessaro/omni";
 
 installMemoryLocalStorage({
@@ -43,9 +42,7 @@ try {
 const { provider, selectedProvider } = await resolveProviderFromEnv();
 
 // Only the tool transport is swapped; the loop, protocol, and prompt are real.
-const { runAgentLoop } = await loadSrcModule("lib/agent/loop.ts", {
-  alias: { "@tauri-apps/plugin-http": join(HERE, "node-http-passthrough.mjs") },
-});
+const { runAgentLoop } = await loadSrcModule("lib/agent/loop.ts");
 const { fetchAIResponse } = await loadSrcModule(
   "lib/functions/ai-response.function.ts"
 );

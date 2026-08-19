@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { listModels, readCachedModels, writeCachedModels } from "@/lib";
 
 /** Above this many models the list needs a filter to be usable. */
@@ -52,7 +53,7 @@ export const QuickModelSwitcher = () => {
     // Check Ollama status and list models
     const checkOllama = async () => {
       try {
-        const res = await fetch("http://localhost:11434/api/tags", {
+        const res = await tauriFetch("http://localhost:11434/api/tags", {
           signal: AbortSignal.timeout(1200),
         });
         if (res.ok) {
