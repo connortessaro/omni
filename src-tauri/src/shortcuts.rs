@@ -626,3 +626,60 @@ fn handle_move_window<R: Runtime>(app: &AppHandle<R>, direction: &str) {
 pub fn exit_app(app_handle: tauri::AppHandle) {
     app_handle.exit(0);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every default binding the app ships must actually parse, or the shortcut
+    /// silently fails to register and the HUD becomes unreachable.
+    #[test]
+    fn shipped_default_shortcuts_all_parse() {
+        for key in [
+            "cmd+backslash",
+            "ctrl+backslash",
+            "cmd+shift+d",
+            "cmd+shift+i",
+            "cmd+shift+s",
+            "cmd+shift+m",
+            "cmd+shift+a",
+            "cmd+up",
+            "cmd+down",
+            "cmd+left",
+            "cmd+right",
+        ] {
+            assert_eq!(
+                validate_shortcut_key(key.to_string()),
+                Ok(true),
+                "default shortcut {key} does not parse"
+            );
+        }
+    }
+
+    #[test]
+    fn move_window_modifiers_expand_into_parsable_arrow_bindings() {
+        // update_shortcuts builds "<modifiers>+<arrow>" for move_window rather
+        // than registering the modifier alone.
+        for modifiers in ["cmd", "ctrl", "cmd+shift"] {
+            for arrow in ["up", "down", "left", "right"] {
+                let key = format!("{modifiers}+{arrow}");
+                assert_eq!(
+                    validate_shortcut_key(key.clone()),
+                    Ok(true),
+                    "expanded move_window binding {key} does not parse"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn garbage_is_rejected_without_erroring() {
+        for key in ["", "not a shortcut", "cmd+", "+", "cmd+cmd+cmd"] {
+            assert_eq!(
+                validate_shortcut_key(key.to_string()),
+                Ok(false),
+                "expected {key:?} to be reported invalid, not accepted"
+            );
+        }
+    }
+}

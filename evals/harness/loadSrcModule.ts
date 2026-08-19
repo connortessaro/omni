@@ -23,7 +23,19 @@ const TSCONFIG_PATH = path.join(REPO_ROOT, "tsconfig.json");
  * fetchAIResponse's own `url.includes("http") ? fetch : tauriFetch` branch
  * always picks the standard global `fetch` — the one this harness controls.
  */
-export async function loadSrcModule<T>(relativeToSrc: string): Promise<T> {
+export interface LoadOptions {
+  /**
+   * Bare specifiers to redirect at bundle time, e.g. pointing
+   * `@tauri-apps/plugin-sql` at an in-memory stub so the real database layer
+   * can be exercised in Node without touching production code.
+   */
+  alias?: Record<string, string>;
+}
+
+export async function loadSrcModule<T>(
+  relativeToSrc: string,
+  options: LoadOptions = {}
+): Promise<T> {
   mkdirSync(CACHE_DIR, { recursive: true });
   const entry = path.join(REPO_ROOT, "src", relativeToSrc);
   const outfile = path.join(CACHE_DIR, `${randomUUID()}.mjs`);
@@ -36,6 +48,7 @@ export async function loadSrcModule<T>(relativeToSrc: string): Promise<T> {
     format: "esm",
     target: "node18",
     packages: "external",
+    alias: options.alias,
     tsconfig: TSCONFIG_PATH,
     logLevel: "silent",
   });

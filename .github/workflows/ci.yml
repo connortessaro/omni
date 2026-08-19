@@ -8,7 +8,7 @@ on:
 
 jobs:
   check-frontend:
-    name: Frontend Typecheck & Build
+    name: Frontend Typecheck, Tests & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,11 +21,56 @@ jobs:
         run: npm ci || npm install
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Typecheck test harnesses
+        run: npm run eval:typecheck
+      # Nothing in the type system spans the Tauri IPC boundary, so a frontend
+      # invoke() of an unregistered command only fails at runtime.
+      - name: Tauri command parity
+        run: npm run check:commands
+      - name: Unit tests
+        run: npm run eval:test
+      - name: Request assembly dry run
+        run: npm run eval:dry-run
       - name: Build Frontend
         run: npm run build
 
+  check-hud:
+    name: HUD Layout Probe (WebKit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci || npm install
+      # WebKit, not Chromium: the app runs in WKWebView, and Chromium supports
+      # CSS that WebKit does not, so a Chromium run passes on real layout bugs.
+      - name: Install WebKit
+        run: npx playwright install --with-deps webkit
+      - name: Start dev server
+        run: |
+          npm run dev &
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:1420/ >/dev/null && exit 0
+            sleep 1
+          done
+          echo "dev server never came up"
+          exit 1
+      - name: Probe HUD layout
+        run: npm run hud:probe
+      - name: Upload probe screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hud-screenshots
+          path: dev-harness/out/
+          if-no-files-found: warn
+
   check-rust:
-    name: Rust Backend Check
+    name: Rust Backend Check & Tests
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,3 +83,6 @@ jobs:
       - name: Cargo Check
         working-directory: ./src-tauri
         run: cargo check
+      - name: Cargo Test
+        working-directory: ./src-tauri
+        run: cargo test
