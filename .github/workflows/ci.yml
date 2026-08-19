@@ -40,7 +40,10 @@ jobs:
   check-hud:
     name: HUD Layout Probe (WebKit)
     timeout-minutes: 15
-    runs-on: ubuntu-latest
+    # macOS, not ubuntu: `playwright install --with-deps` shells out to apt-get on
+    # Linux and hung there for 15 minutes. macOS needs no system deps, and its
+    # WebKit build is closer to the WKWebView the app actually ships inside.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
@@ -50,10 +53,16 @@ jobs:
           cache: "npm"
       - name: Install dependencies
         run: npm ci || npm install
+      - name: Cache WebKit
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-webkit-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # WebKit, not Chromium: the app runs in WKWebView, and Chromium supports
       # CSS that WebKit does not, so a Chromium run passes on real layout bugs.
       - name: Install WebKit
-        run: npx playwright install --with-deps webkit
+        timeout-minutes: 6
+        run: npx playwright install webkit
       # Redirecting the background server's output matters: a child that inherits
       # the step's stdout holds the pipe open and the step never finishes.
       - name: Start dev server
