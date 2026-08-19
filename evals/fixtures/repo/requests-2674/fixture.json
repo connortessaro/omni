@@ -1,0 +1,12 @@
+{
+  "source": "princeton-nlp/SWE-bench_Lite",
+  "instanceId": "psf__requests-2674",
+  "repo": "psf/requests",
+  "baseCommit": "0be38a0c37c59c4b66ce908731da15b401655113",
+  "createdAt": "2015-07-17T08:33:52Z",
+  "changedFiles": [
+    "requests/adapters.py"
+  ],
+  "issueFile": "issue.md",
+  "goldPatchFile": "gold.patch"
+}
