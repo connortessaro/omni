@@ -1,6 +1,30 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 import type { Task } from "../types.ts";
 import type { Message } from "../../src/types/completion.ts";
 import type { RawProvider, SelectedProvider } from "./providerConfig.ts";
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+/**
+ * Reads a task's image fixtures. A missing fixture throws rather than running the
+ * task without its image: a vision task that silently degrades into a text task
+ * would report a pass that means nothing.
+ */
+export function loadTaskImages(task: Task): string[] {
+  return (task.imageFixtures ?? []).map((relativePath) => {
+    const absolute = join(REPO_ROOT, relativePath);
+    try {
+      return readFileSync(absolute).toString("base64");
+    } catch (error) {
+      throw new Error(
+        `Task ${task.id} needs image fixture ${relativePath}, which could not be ` +
+          `read from ${absolute}: ${error instanceof Error ? error.message : error}`
+      );
+    }
+  });
+}
 
 export interface FetchAIResponseParams {
   provider: RawProvider | undefined;
@@ -49,6 +73,7 @@ export async function runTaskAgainstOmni(
       systemPrompt: task.systemPrompt,
       history: task.history ?? [],
       userMessage: task.prompt,
+      imagesBase64: loadTaskImages(task),
       signal,
     })) {
       responseText += chunk;

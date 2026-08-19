@@ -1,63 +1,77 @@
 import type { Task } from "../types.ts";
 
-// Omni's request pipeline already supports images (see the `imagesBase64`
-// param on fetchAIResponse and the {{IMAGE}} template slot in every curl
-// provider in src/config/ai-providers.constants.ts), so these tasks are
-// wired the same way the other categories are — they just can't be scored
-// with a deterministic string/number check the way code or arithmetic can,
-// and there is no vision-capable key on this machine to call one with. See
-// grader.gradingPath on each task for how it would be scored with one.
+// The scenario these exist for: a repo is open in a browser IDE and Omni's only
+// view of the code is a screenshot. Screen reading is not a side feature there, it
+// is the whole capability, so it needs a pass/fail signal like every other
+// category.
+//
+// These previously carried `manual` graders, which run-eval.ts skips, and
+// runTaskAgainstOmni never passed `imagesBase64` — so the vision path shipped with
+// no executed coverage at all. Fixtures are real captures of psf/requests open in
+// VS Code for the web, taken by dev-harness/ide-capture.mjs, with the on-screen text
+// recorded alongside each PNG.
+//
+// Graded on strings that are in the fixture and are not guessable from the prompt:
+// vendored urllib3 import paths and this repo's own constant names. A model that
+// cannot read the screenshot cannot produce them.
 export const visionTasks: Task[] = [
   {
-    id: "vision-error-dialog-screenshot",
+    id: "vision-read-code-from-browser-ide",
     category: "vision",
-    title: "Diagnose an error from a screenshot",
+    title: "Read source off a screenshot of VS Code in a browser",
     prompt:
-      "Here is a screenshot of an error dialog on my screen. What is causing this error, " +
-      "and how do I fix it?",
+      "This is a screenshot of a source file open in a code editor in a web browser. " +
+      "Transcribe every line of code that is visible, verbatim, preserving order. " +
+      "Output only the code, with no commentary and no line numbers.",
+    imageFixtures: ["evals/fixtures/vision/vscode-web-adapters-2x.png"],
     grader: {
-      type: "manual",
-      gradingPath:
-        "Fixture: a PNG of a real stack trace/error dialog checked into evals/fixtures/vision/, " +
-        "base64-encoded and passed via imagesBase64. Because the exact text baked into the fixture " +
-        "is known ahead of time (e.g. a specific error code), grade deterministically with the " +
-        "substring grader against that known fact — treat this as an OCR+reasoning check, not free " +
-        "vision QA. A richer secondary signal (does the suggested fix make sense) needs an LLM-judge " +
-        "rubric or human review; report that separately from the deterministic fact-check so a flaky " +
-        "judge score never masks a solid pass/fail signal.",
+      type: "substring",
+      expectedAll: [
+        "from .packages.urllib3.poolmanager import PoolManager, proxy_from_url",
+        "from .packages.urllib3.util import Timeout as TimeoutSauce",
+        "from .packages.urllib3.exceptions import ProxyError as _ProxyError",
+        "DEFAULT_POOLBLOCK",
+        "class BaseAdapter(object):",
+      ],
+      caseSensitive: true,
     },
   },
   {
-    id: "vision-ui-layout-bug",
+    id: "vision-locate-symbol-in-screenshot",
     category: "vision",
-    title: "Spot a CSS layout bug from a screenshot",
+    title: "Answer a question about code that is only in a screenshot",
     prompt:
-      "Here is a screenshot of a broken UI (overlapping elements, misaligned text). What is " +
-      "wrong with the layout, and what CSS change would fix it?",
+      "The screenshot shows a Python file open in an editor. Which urllib3 exception " +
+      "types does this file import, and what is each one aliased to? Answer from the " +
+      "screenshot only.",
+    imageFixtures: ["evals/fixtures/vision/vscode-web-adapters-2x.png"],
     grader: {
-      type: "manual",
-      gradingPath:
-        "Fixture: a PNG of a deliberately broken layout (e.g. a flex-direction or z-index bug) with " +
-        "a known root cause. No single short string reliably captures \"identified the right bug\", " +
-        "so grade with an LLM-judge rubric (does the answer name the correct property and a plausible " +
-        "fix) rather than substring matching, and treat the score as directional, not pass/fail exact.",
+      type: "substring",
+      expectedAll: ["_HTTPError", "_ProxyError", "ConnectTimeoutError"],
+      caseSensitive: true,
     },
   },
   {
-    id: "vision-whiteboard-diagram",
+    id: "vision-full-screen-capture-tail",
     category: "vision",
-    title: "Transcribe and critique a whiteboard architecture diagram",
+    title: "Read the bottom of a full-screen capture",
     prompt:
-      "Here is a photo of a whiteboard sketch of a system architecture. Transcribe the " +
-      "components and connections, then identify the most likely bottleneck.",
+      "This is a screenshot of an entire 2560x1600 screen with a source file open in " +
+      "an editor. Find the class definition furthest down the visible file and quote " +
+      "its `__attrs__` list exactly as written, then quote the first parameter of its " +
+      "`__init__` signature.",
+    imageFixtures: [
+      "evals/fixtures/vision/vscode-web-fullscreen-2560x1600.png",
+    ],
     grader: {
-      type: "manual",
-      gradingPath:
-        "Fixture: a photo of a hand-drawn diagram with a known component list and one intended " +
-        "bottleneck (e.g. a single shared database behind five services). Grade transcription " +
-        "recall with a substring/checklist grader (did it name each component), and grade the " +
-        "bottleneck call with an LLM-judge rubric, since \"most likely bottleneck\" has more than " +
-        "one defensible answer.",
+      type: "substring",
+      expectedAll: ["_pool_block", "DEFAULT_POOLSIZE"],
+      caseSensitive: true,
     },
+    knownWeakness:
+      "A full-screen capture puts ~66 lines of code on screen. Asked to transcribe " +
+      "all of it, the model reads roughly the first 60% and stops, with no indication " +
+      "that the rest went unread. This task asks about content near the bottom on " +
+      "purpose, so that failure shows up as a failure instead of a shorter answer.",
   },
 ];

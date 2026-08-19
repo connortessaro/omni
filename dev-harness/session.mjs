@@ -109,25 +109,47 @@ const chipLabels = (page) =>
 /**
  * Waits for the turn to finish. Loading may not have started yet when this is
  * called, so it waits for the indicator to appear first, then for it to go.
+ *
+ * Also records when the first character of the answer rendered. Time to first text
+ * against total time is the difference between reading an answer as it arrives and
+ * staring at a spinner until it is finished, which is the whole experience of using
+ * this under time pressure.
  */
-const waitForTurn = async (page) => {
+const waitForTurn = async (page, startedAt) => {
   const deadline = Date.now() + TURN_TIMEOUT_MS;
+  let firstTextMs = null;
+
+  // The response panel's scroll region is `h-[calc(100vh-7rem)]`, so at the 54px
+  // resting height it computes to zero and WebKit reports no text inside it. The
+  // real app avoids that because the native window really does grow; the driver has
+  // to mirror that as it happens, not once the turn is over.
+  const tick = async () => {
+    await syncViewport(page);
+    if (firstTextMs === null && (await responseText(page)).length > 0) {
+      firstTextMs = Date.now() - startedAt;
+    }
+  };
 
   while (Date.now() < deadline) {
     if (await isLoading(page)) break;
-    if ((await errorText(page)) !== "") return { finished: true, viaError: true };
-    await page.waitForTimeout(100);
+    await tick();
+    if ((await errorText(page)) !== "") {
+      return { finished: true, viaError: true, firstTextMs };
+    }
+    await page.waitForTimeout(50);
   }
 
   while (Date.now() < deadline) {
+    await tick();
     if (!(await isLoading(page))) {
       // Let the last streamed chunk render before reading the text back.
       await page.waitForTimeout(300);
-      return { finished: true, viaError: false };
+      await tick();
+      return { finished: true, viaError: false, firstTextMs };
     }
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(50);
   }
-  return { finished: false, viaError: false };
+  return { finished: false, viaError: false, firstTextMs };
 };
 
 /** Pastes text the way a user would, so the app's own paste handler runs. */
@@ -214,7 +236,7 @@ const main = async () => {
     const startedAt = Date.now();
     await page.keyboard.press("Enter");
 
-    const { finished, viaError } = await waitForTurn(page);
+    const { finished, viaError, firstTextMs } = await waitForTurn(page, startedAt);
     const wallMs = Date.now() - startedAt;
 
     const window = await syncViewport(page);
@@ -235,6 +257,7 @@ const main = async () => {
       finished,
       viaError,
       wallMs,
+      firstTextMs,
       requests: forThisTurn,
       requestBytes: forThisTurn.reduce((sum, r) => sum + r.requestBytes, 0),
       windowHeightRequested: window.requested,
@@ -246,7 +269,8 @@ const main = async () => {
 
     console.log(
       `turn ${turnIndex}  ${finished ? "ok" : "TIMEOUT"}  ` +
-        `${wallMs}ms  sent=${(entry.requestBytes / 1024).toFixed(1)}KB  ` +
+        `${wallMs}ms (first text ${firstTextMs ?? "never"}ms)  ` +
+        `sent=${(entry.requestBytes / 1024).toFixed(1)}KB  ` +
         `calls=${forThisTurn.length}  height=${window.requested}  ` +
         `chars=${entry.response.length}${entry.error ? `  ERROR: ${entry.error}` : ""}`
     );
