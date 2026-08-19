@@ -6,8 +6,12 @@ import {
   getStreamingContent,
 } from "./common.function";
 import { Message, TYPE_PROVIDER } from "@/types";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import curl2Json from "@bany/curl-to-json";
+import {
+  isSecretVariable,
+  secretPlaceholder,
+  streamProviderRequest,
+} from "./transport";
 import { getResponseSettings, RESPONSE_LENGTHS, LANGUAGES } from "@/lib";
 import { MARKDOWN_FORMATTING_INSTRUCTIONS } from "@/config/constants";
 
@@ -128,11 +132,13 @@ export async function* fetchAIResponse(params: {
       bodyObj[messagesKey] = finalMessages;
     }
 
+    // A credential is replaced by a placeholder, not its value: Rust substitutes
+    // the real one at send time, so nothing here ever holds a key.
     const allVariables = {
       ...Object.fromEntries(
         Object.entries(selectedProvider.variables).map(([key, value]) => [
           key.toUpperCase(),
-          value,
+          isSecretVariable(key) ? secretPlaceholder(key.toUpperCase()) : value,
         ])
       ),
       SYSTEM_PROMPT: enhancedSystemPrompt || "",
@@ -157,107 +163,44 @@ export async function* fetchAIResponse(params: {
       }
     }
 
-    // Always the Rust client, never the webview's fetch: it bypasses CORS (most
-    // provider APIs send no CORS headers) and it keeps the webview with no
-    // outbound network at all, so injected script has nowhere to send a key.
-    const fetchFunction = tauriFetch;
-
-    let response;
-    try {
-      response = await fetchFunction(url, {
-        method: curlJson.method || "POST",
-        headers,
-        body: curlJson.method === "GET" ? undefined : JSON.stringify(bodyObj),
-        signal,
-      });
-    } catch (fetchError) {
-      // Check if aborted
-      if (
-        signal?.aborted ||
-        (fetchError instanceof Error && fetchError.name === "AbortError")
-      ) {
-        return; // Silently return on abort
-      }
-      yield `Network error during API request: ${
-        fetchError instanceof Error ? fetchError.message : "Unknown error"
-      }`;
-      return;
-    }
-
-    if (!response.ok) {
-      let errorText = "";
-      try {
-        errorText = await response.text();
-      } catch {}
-      yield `API request failed: ${response.status} ${response.statusText}${
-        errorText ? ` - ${errorText}` : ""
-      }`;
-      return;
-    }
+    const method = (curlJson.method || "POST").toUpperCase();
+    const stream = streamProviderRequest({
+      providerId: selectedProvider.provider,
+      url,
+      method,
+      headers,
+      body: method === "GET" ? undefined : JSON.stringify(bodyObj),
+      signal,
+    });
 
     if (!provider?.streaming) {
-      let json;
+      let raw = "";
       try {
-        json = await response.json();
-      } catch (parseError) {
-        yield `Failed to parse non-streaming response: ${
-          parseError instanceof Error ? parseError.message : "Unknown error"
-        }`;
+        for await (const chunk of stream) raw += chunk;
+      } catch (error) {
+        if (signal?.aborted) return;
+        yield error instanceof Error ? error.message : String(error);
         return;
       }
-      const content =
-        getByPath(json, provider?.responseContentPath || "") || "";
-      yield content;
+      try {
+        const json = JSON.parse(raw);
+        yield getByPath(json, provider?.responseContentPath || "") || "";
+      } catch {
+        yield `Failed to parse non-streaming response: ${raw.slice(0, 200)}`;
+      }
       return;
     }
 
-    if (!response.body) {
-      yield "Streaming not supported or response body missing";
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
     let buffer = "";
+    try {
+      for await (const chunk of stream) {
+        if (signal?.aborted) return;
+        buffer += chunk;
 
-    while (true) {
-      // Check if aborted
-      if (signal?.aborted) {
-        reader.cancel();
-        return;
-      }
-
-      let readResult;
-      try {
-        readResult = await reader.read();
-      } catch (readError) {
-        // Check if aborted
-        if (
-          signal?.aborted ||
-          (readError instanceof Error && readError.name === "AbortError")
-        ) {
-          return; // Silently return on abort
-        }
-        yield `Error reading stream: ${
-          readError instanceof Error ? readError.message : "Unknown error"
-        }`;
-        return;
-      }
-      const { done, value } = readResult;
-      if (done) break;
-
-      // Check if aborted before processing
-      if (signal?.aborted) {
-        reader.cancel();
-        return;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("data:")) {
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
           const trimmed = line.substring(5).trim();
           if (!trimmed || trimmed === "[DONE]") continue;
           try {
@@ -266,14 +209,15 @@ export async function* fetchAIResponse(params: {
               parsed,
               provider?.responseContentPath || ""
             );
-            if (delta) {
-              yield delta;
-            }
-          } catch (e) {
-            // Ignore parsing errors for partial JSON chunks
+            if (delta) yield delta;
+          } catch {
+            // Partial JSON across a chunk boundary; the next chunk completes it.
           }
         }
       }
+    } catch (error) {
+      if (signal?.aborted) return;
+      yield error instanceof Error ? error.message : String(error);
     }
   } catch (error) {
     throw new Error(

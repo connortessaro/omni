@@ -24,6 +24,28 @@ const NODE_HTTP_PASSTHROUGH = path.join(
 );
 
 /**
+ * Provider requests go through a Tauri command now, so the transport module is
+ * the seam rather than the HTTP plugin. esbuild's `alias` only accepts bare
+ * package specifiers, and this is a relative import, so it is redirected with a
+ * resolve plugin instead.
+ */
+const NODE_TRANSPORT = path.join(__dirname, "node-transport.mjs");
+
+const redirectTransport = {
+  name: "redirect-transport",
+  setup(build: {
+    onResolve: (
+      options: { filter: RegExp },
+      callback: () => { path: string }
+    ) => void;
+  }) {
+    build.onResolve({ filter: /(^|\/)transport(\.ts)?$/ }, () => ({
+      path: NODE_TRANSPORT,
+    }));
+  },
+};
+
+/**
  * Bundles a single file from the real `src/` tree with esbuild (honoring the
  * project's own tsconfig `@/*` path aliases) and dynamically imports the
  * result. This is how the harness gets at Omni's production request-assembly
@@ -66,6 +88,7 @@ export async function loadSrcModule<T>(
       [TAURI_HTTP_SPECIFIER]: NODE_HTTP_PASSTHROUGH,
       ...options.alias,
     },
+    plugins: [redirectTransport],
     tsconfig: TSCONFIG_PATH,
     logLevel: "silent",
   });

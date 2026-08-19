@@ -4,7 +4,7 @@ import {
   SPEECH_TO_TEXT_PROVIDERS,
   STORAGE_KEYS,
 } from "@/config";
-import { getPlatform, safeLocalStorage } from "@/lib";
+import { getPlatform, migrateProviderSecrets, safeLocalStorage } from "@/lib";
 import { getShortcutsConfig } from "@/lib/storage";
 import {
   getCustomizableState,
@@ -436,6 +436,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [selectedAIProvider]);
 
+
   // Sync selected STT to localStorage
   useEffect(() => {
     if (selectedSttProvider.provider) {
@@ -457,6 +458,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     ...SPEECH_TO_TEXT_PROVIDERS,
     ...customSttProviders,
   ];
+
+  // Credentials belong in the OS credential store, not localStorage. Runs on
+  // every provider change so a key entered in Dev space lands there too.
+  useEffect(() => {
+    void migrateProviderSecrets(selectedAIProvider, allAiProviders);
+  }, [selectedAIProvider, allAiProviders]);
 
   const onSetSelectedAIProvider = ({
     provider,
