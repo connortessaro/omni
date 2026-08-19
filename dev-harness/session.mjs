@@ -99,6 +99,26 @@ const historyNotice = (page) =>
     () => document.querySelector('[data-slot="history-notice"]')?.innerText ?? ""
   );
 
+/**
+ * What actually went out, read off the mock's own call log.
+ *
+ * The context chips claim the attached files are part of the conversation. Whether
+ * they are is a property of the request body, not of the UI, so it gets read from
+ * the request body. `renderBlocksAsText` prefixes them with "Attached context (",
+ * which makes their presence a single check.
+ */
+const sentBodies = (page) =>
+  page.evaluate(() =>
+    (window.__HARNESS__?.callsFor("provider_request") ?? []).map((call) => {
+      const body = call.args?.request?.body ?? "";
+      return {
+        chars: body.length,
+        hasAttachedContext: body.includes("Attached context ("),
+        images: (body.match(/data:image\/png;base64,/g) ?? []).length,
+      };
+    })
+  );
+
 const chipLabels = (page) =>
   page.evaluate(() =>
     Array.from(document.querySelectorAll('[data-slot="context-chip"]')).map(
@@ -190,6 +210,7 @@ const main = async () => {
   const log = [];
   let turnIndex = 0;
   let statsSeen = 0;
+  let bodiesSeen = 0;
 
   for (const step of steps) {
     if (step.kind === "attach") {
@@ -249,6 +270,10 @@ const main = async () => {
     const forThisTurn = requests.slice(statsSeen);
     statsSeen = requests.length;
 
+    const bodies = await sentBodies(page);
+    const bodiesThisTurn = bodies.slice(bodiesSeen);
+    bodiesSeen = bodies.length;
+
     const entry = {
       turn: turnIndex,
       prompt: step.text,
@@ -259,6 +284,7 @@ const main = async () => {
       wallMs,
       firstTextMs,
       requests: forThisTurn,
+      sentBodies: bodiesThisTurn,
       requestBytes: forThisTurn.reduce((sum, r) => sum + r.requestBytes, 0),
       windowHeightRequested: window.requested,
       historyNotice: await historyNotice(page),
@@ -271,7 +297,10 @@ const main = async () => {
       `turn ${turnIndex}  ${finished ? "ok" : "TIMEOUT"}  ` +
         `${wallMs}ms (first text ${firstTextMs ?? "never"}ms)  ` +
         `sent=${(entry.requestBytes / 1024).toFixed(1)}KB  ` +
-        `calls=${forThisTurn.length}  height=${window.requested}  ` +
+        `calls=${forThisTurn.length}  ` +
+        `context=${bodiesThisTurn.map((b) => (b.hasAttachedContext ? "yes" : "no")).join(",") || "-"}  ` +
+        `images=${bodiesThisTurn.map((b) => b.images).join(",") || "-"}  ` +
+        `height=${window.requested}  ` +
         `chars=${entry.response.length}${entry.error ? `  ERROR: ${entry.error}` : ""}`
     );
     if (entry.historyNotice) console.log(`        notice: ${entry.historyNotice}`);

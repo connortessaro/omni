@@ -88,6 +88,22 @@ const run = async () => {
     content: readFileSync(join(HERE, "tauri-mock.js"), "utf8"),
   });
 
+  // Pin the provider to "none" so submitting takes the "No AI provider selected"
+  // path. This probe asserts layout and state behaviour and must not need a key or
+  // a network call. Written rather than removed because seed-settings.js only fills
+  // the key when it is absent, so a present-but-empty value survives under
+  // `npm run dev:live` as well as under a plain `npm run dev`.
+  await context.addInitScript(() => {
+    try {
+      localStorage.setItem(
+        "curl_selected_ai_provider",
+        JSON.stringify({ provider: "", variables: {} })
+      );
+    } catch {
+      // A browser with storage disabled still exercises the layout assertions.
+    }
+  });
+
   const page = await context.newPage();
   const consoleErrors = [];
   // The HUD probes Ollama on localhost:11434 to offer local models. When nothing
@@ -243,6 +259,56 @@ const run = async () => {
     `panel text: ${switcherState.sectionText.replace(/\s+/g, " ").slice(0, 120)}`
   );
   await page.keyboard.press("Escape");
+
+  // 7. attached context has to outlive a turn.
+  //
+  // The chips are the user's only evidence that the model can still see the files
+  // they attached. If a follow-up is sent without them, the model answers from
+  // whatever it happens to know about the code instead, confidently and wrongly,
+  // and the chips are still on screen while it does. This is the whole difference
+  // between a working multi-turn debugging session and a misleading one.
+  await page.setViewportSize({ width: HUD_WIDTH, height: HUD_RESTING_HEIGHT });
+  await prompt.fill("");
+  const attachContext = await page.evaluate(() => {
+    const target = document.querySelector("textarea");
+    if (!target) return { ok: false };
+    const text = Array.from(
+      { length: 40 },
+      (_, i) => `export const marker${i} = ${i}; // attached source line ${i}`
+    ).join("\n");
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: { items: [], getData: (type) => (type === "text/plain" ? text : "") },
+    });
+    target.dispatchEvent(event);
+    return { ok: true };
+  });
+  await page.waitForTimeout(300);
+  const chipsAttached = (await measure(page)).chips;
+  // Relative, not absolute: an earlier assertion leaves a chip behind on purpose.
+
+  await prompt.click();
+  await prompt.pressSequentially("first question about the attached file");
+  await prompt.press("Enter");
+  await page.waitForTimeout(600);
+  const chipsAfterFirstTurn = (await measure(page)).chips;
+
+  await prompt.click();
+  await prompt.pressSequentially("follow-up question about the same file");
+  await prompt.press("Enter");
+  await page.waitForTimeout(600);
+  const chipsAfterFollowUp = (await measure(page)).chips;
+
+  await captureAt(page, HUD_RESTING_HEIGHT * 4, "6-context-across-turns.png");
+  record(
+    "attached context survives a follow-up turn",
+    attachContext.ok &&
+      chipsAttached > 0 &&
+      chipsAfterFirstTurn === chipsAttached &&
+      chipsAfterFollowUp === chipsAttached,
+    `chips: ${chipsAttached} attached -> ${chipsAfterFirstTurn} after turn 1 -> ` +
+      `${chipsAfterFollowUp} after the follow-up`
+  );
 
   record(
     "no console errors",

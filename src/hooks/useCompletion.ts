@@ -497,6 +497,30 @@ export const useCompletion = () => {
     }));
   }, [cancel, keepEngaged]);
 
+  /**
+   * Puts the answer away without throwing away what the user assembled.
+   *
+   * The response panel is controlled by derived state, so it closes both when the
+   * user dismisses it and when a new turn clears the previous answer. `reset` was
+   * wired to that close, which meant sending a follow-up wiped the attached files
+   * and pastes: the chips stayed on screen for one more render while the request
+   * went out without them, and the model answered from whatever it already knew
+   * about the code. Dismissing clears the answer; only an explicit clear discards
+   * the context.
+   */
+  const dismissResponse = useCallback(() => {
+    if (keepEngaged) {
+      return;
+    }
+    cancel();
+    setState((prev) => ({
+      ...prev,
+      response: "",
+      error: null,
+      historyNotice: null,
+    }));
+  }, [cancel, keepEngaged]);
+
   // Helper function to convert file to base64
   const fileToBase64 = useCallback(async (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -1258,6 +1282,7 @@ export const useCompletion = () => {
     submit,
     cancel,
     reset,
+    dismissResponse,
     setState,
     enableVAD,
     setEnableVAD,

@@ -49,6 +49,7 @@ export const Input = ({
   isPopoverOpen,
   isLoading,
   reset,
+  dismissResponse,
   input,
   setInput,
   handleKeyPress,
@@ -120,8 +121,12 @@ export const Input = ({
       <Popover
         open={isPopoverOpen}
         onOpenChange={(open) => {
+          // Derived state closes this panel too, not just the user: sending a
+          // follow-up clears the previous answer, which flips `open` to false.
+          // Clearing everything here therefore threw away the attached files
+          // mid-turn. Dismissing puts the answer away and keeps the context.
           if (!open && !isLoading && !keepEngaged) {
-            reset();
+            dismissResponse();
           }
         }}
       >

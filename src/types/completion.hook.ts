@@ -65,6 +65,8 @@ export interface UseCompletionReturn {
   cancel: () => void;
   /** Function to reset the completion state (clears input, response, error, files) */
   reset: () => void;
+  /** Closes the answer panel but keeps the attached context and typed input */
+  dismissResponse: () => void;
 
   // State management
   /** Direct state setter for advanced use cases */
