@@ -90,8 +90,15 @@ const run = async () => {
 
   const page = await context.newPage();
   const consoleErrors = [];
+  // The HUD probes Ollama on localhost:11434 to offer local models. When nothing
+  // is listening the component handles it, but the browser still logs a failed
+  // resource load, so that one endpoint is not treated as a defect.
+  const OPTIONAL_ENDPOINTS = ["11434"];
   page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
+    if (message.type() !== "error") return;
+    const url = message.location()?.url ?? "";
+    if (OPTIONAL_ENDPOINTS.some((host) => url.includes(host))) return;
+    consoleErrors.push(`${message.text()} ${url}`.trim());
   });
   page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message}`));
 
@@ -205,6 +212,37 @@ const run = async () => {
     `menu reaches ${withMenu.overlayBottomOverflow}px below the card top, window asked for ${withMenu.requestedWindowHeight}px`
   );
   await prompt.fill("");
+
+  // 6. the model switcher popover renders in a portal outside the HUD card, so
+  // the content-height observer cannot see it and the window must expand for it
+  await page.setViewportSize({ width: HUD_WIDTH, height: HUD_RESTING_HEIGHT });
+  // Not getByTitle: useTitles strips every title attribute in the HUD to keep
+  // native tooltips from appearing over the overlay.
+  const switcher = page.locator('[data-slot="model-switcher"]');
+  await switcher.click();
+  await page.waitForTimeout(700);
+  const switcherState = await page.evaluate(() => ({
+    popoverOpen: document.querySelectorAll("[data-radix-popper-content-wrapper]")
+      .length,
+    modelOptions: document.querySelectorAll('[data-slot="model-option"]').length,
+    requestedWindowHeight: window.__HARNESS__?.lastWindowHeight() ?? null,
+    sectionText:
+      document.querySelector("[data-radix-popper-content-wrapper]")?.textContent
+        ?.slice(0, 200) ?? "",
+  }));
+  await captureAt(page, switcherState.requestedWindowHeight, "5-model-switcher.png");
+  record(
+    "model switcher popover expands the window instead of being clipped",
+    switcherState.popoverOpen > 0 &&
+      (switcherState.requestedWindowHeight ?? 0) > HUD_RESTING_HEIGHT,
+    `popovers open=${switcherState.popoverOpen}, window asked for ${switcherState.requestedWindowHeight}px, model options=${switcherState.modelOptions}`
+  );
+  record(
+    "model section reports something rather than sitting blank",
+    /model/i.test(switcherState.sectionText),
+    `panel text: ${switcherState.sectionText.replace(/\s+/g, " ").slice(0, 120)}`
+  );
+  await page.keyboard.press("Escape");
 
   record(
     "no console errors",

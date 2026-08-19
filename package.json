@@ -16,7 +16,8 @@
     "eval:dry-run": "node evals/scripts/dry-run.ts",
     "eval:run": "node evals/scripts/run-eval.ts",
     "hud:probe": "node dev-harness/probe.mjs",
-    "check:commands": "node scripts/check-commands.mjs"
+    "check:commands": "node scripts/check-commands.mjs",
+    "verify:models": "node scripts/verify-model-listing.mjs"
   },
   "dependencies": {
     "@bany/curl-to-json": "^1.2.8",

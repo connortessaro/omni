@@ -67,10 +67,11 @@ export const useWindowResize = () => {
       }
     };
 
+    // Popovers render in a portal outside the HUD card, so the content-height
+    // observer cannot see them. Any open popover needs the tall window, or it is
+    // clipped at the collapsed height with no way to reach its contents.
     const observer = new MutationObserver(() => {
-      if (!isAnyPopoverOpen()) {
-        resizeWindow(false);
-      }
+      resizeWindow(isAnyPopoverOpen());
     });
 
     // Observe the body for changes to detect popover open/close
