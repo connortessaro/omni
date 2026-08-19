@@ -15,8 +15,8 @@ export const AppIconToggle = ({ className }: AppIconToggleProps) => {
   return (
     <div id="app-icon" className={`space-y-2 ${className}`}>
       <Header
-        title="App Icon Stealth Mode"
-        description="Control dock/taskbar icon visibility when window is hidden for maximum discretion"
+        title="Dock Icon"
+        description="Show or hide the icon in the dock and taskbar"
         isMainTitle
       />
       <div className="flex items-center justify-between">

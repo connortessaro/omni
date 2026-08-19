@@ -4,7 +4,7 @@
 
 # Omni ⚡
 
-### Fast, privacy-first AI desktop companion built with Tauri v2, Rust & React.
+### Local-first AI assistant for the desktop. Tauri v2, Rust, React.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app)
@@ -18,13 +18,12 @@
 
 ## ⚡ Highlights
 
-* **Instant HUD Overlay**: Summon floating command bar anywhere via `⌘ + \` (customizable).
-* **Zero Telemetry / 100% Local-First**: Keys & chats stay on disk in SQLite (`omni.db`). No tracking, no license server, no usage reporting.
-* **Instant Slash Commands**: `/fix`, `/explain`, `/code`, `/summarize`, `/regex`, `/clear`.
-* **Keyboard History**: Press `↑` / `↓` in input box to cycle through recent prompts.
-* **1-Click Local Ollama Detection**: Auto-detects local models (`http://127.0.0.1:11434`) without manual configuration.
-* **Multimodal Vision**: Screenshot desktop areas (`⌘ + Shift + S`) for instant visual reasoning.
-* **Hardware Debounced & Optimized**: Thin LTO, sub-5ms window response, 0 key-repeat HUD flicker.
+* **HUD Overlay**: Summon a floating command bar anywhere via `⌘ + \` (customizable).
+* **Zero Telemetry**: Keys and chats stay on disk in SQLite (`omni.db`). No tracking, no license server, no usage reporting.
+* **Slash Commands**: `/solve` (multi-step, with tools), `/fix`, `/commit`, `/refactor`, `/explain`, `/code`, `/summarize`, `/translate`, `/regex`, `/clear`.
+* **Keyboard History**: Press `↑` / `↓` in the input box to cycle through recent prompts.
+* **Model Switching**: Pick any model your configured key has access to, without re-entering it. Local Ollama models are detected at `http://127.0.0.1:11434`.
+* **Vision**: Screenshot a desktop area (`⌘ + Shift + S`) and ask about it.
 
 ---
 

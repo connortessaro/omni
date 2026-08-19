@@ -2,7 +2,7 @@
   "name": "omni",
   "private": true,
   "version": "0.1.9",
-  "description": "Omni - Fast, privacy-first AI desktop assistant.",
+  "description": "Local-first AI assistant for the desktop. Bring your own provider key.",
   "author": "Connor Tessaro",
   "license": "Apache-2.0",
   "type": "module",
