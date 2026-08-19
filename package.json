@@ -10,7 +10,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "eval:typecheck": "tsc -p evals/tsconfig.json",
+    "eval:test": "node --test evals/graders/*.test.ts",
+    "eval:dry-run": "node evals/scripts/dry-run.ts",
+    "eval:run": "node evals/scripts/run-eval.ts"
   },
   "dependencies": {
     "@bany/curl-to-json": "^1.2.8",

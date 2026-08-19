@@ -28,3 +28,7 @@ dist-ssr
 *.db
 target/
 src-tauri/target/
+
+# Eval harness runtime scratch (bundler cache, code-exec sandboxes) — not data
+evals/.cache/
+evals/.tmp/
