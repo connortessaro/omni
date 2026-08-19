@@ -32,3 +32,5 @@ src-tauri/target/
 # Eval harness runtime scratch (bundler cache, code-exec sandboxes) — not data
 evals/.cache/
 evals/.tmp/
+# Generated HUD probe screenshots
+dev-harness/out/

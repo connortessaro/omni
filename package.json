@@ -14,7 +14,8 @@
     "eval:typecheck": "tsc -p evals/tsconfig.json",
     "eval:test": "node --test evals/graders/*.test.ts",
     "eval:dry-run": "node evals/scripts/dry-run.ts",
-    "eval:run": "node evals/scripts/run-eval.ts"
+    "eval:run": "node evals/scripts/run-eval.ts",
+    "hud:probe": "node dev-harness/probe.mjs"
   },
   "dependencies": {
     "@bany/curl-to-json": "^1.2.8",
@@ -63,6 +64,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "playwright": "^1.62.1",
     "tw-animate-css": "^1.3.6",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"

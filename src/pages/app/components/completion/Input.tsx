@@ -24,6 +24,9 @@ import {
 /** Big enough for a real diff, small enough that reading it never stalls the HUD. */
 const CLIPBOARD_PEEK_LIMIT = 100_000;
 
+/** Must fit one line in the narrow HUD, or a textarea wraps and clips it. */
+const PROMPT_PLACEHOLDER = "Ask anything or type /";
+
 /** One line of the prompt box, matching the icon buttons beside it. */
 const PROMPT_MIN_HEIGHT = 36;
 const PROMPT_MAX_HEIGHT = 320;
@@ -127,6 +130,7 @@ export const Input = ({
                 {contextBlocks.map((block) => (
                   <span
                     key={block.id}
+                    data-slot="context-chip"
                     className="inline-flex items-center gap-1.5 rounded-md border border-input/40 bg-muted/60 px-2 py-0.5 text-[10px] font-medium"
                   >
                     {block.kind === "paste" ? (
@@ -155,7 +159,7 @@ export const Input = ({
               <Textarea
                 ref={inputRef}
                 rows={1}
-                placeholder="Ask me anything or type / for commands..."
+                placeholder={PROMPT_PLACEHOLDER}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {

@@ -52,7 +52,7 @@ const App = () => {
           isHidden ? "hidden pointer-events-none" : ""
         }`}
       >
-        <Card ref={hudRef} className="w-full flex flex-row items-start gap-2 p-2 rounded-2xl bg-card/85 backdrop-blur-2xl border border-white/10 shadow-2xl transition-all duration-300 hover:border-primary/40">
+        <Card ref={hudRef} className="w-full flex flex-row items-center gap-2 p-2 rounded-2xl bg-card/85 backdrop-blur-2xl border border-white/10 shadow-2xl transition-all duration-300 hover:border-primary/40">
           <SystemAudio {...systemAudio} />
           {systemAudio?.capturing ? (
             <div className="flex flex-row items-center gap-2 justify-between w-full">
