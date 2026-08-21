@@ -221,18 +221,37 @@ provider (Google's OpenAI-compatible endpoint):
 | **automated total** | **24/24** |
 
 Vision re-run, 2026-08-21, same provider, after the fixtures and graders landed
-and `capture_to_base64` stopped being the default capture path:
+and `capture_to_base64` stopped being the default capture path. Four runs each,
+because the first one was misread as signal:
 
-| task | result | latency |
-|---|---|---|
-| vision-region-capture-tail | PASS | 3664ms |
-| vision-full-screen-capture-tail | FAIL, `missing: DEFAULT_POOLSIZE` | 6156ms |
+| task | result | latency (4 runs) | median |
+|---|---|---|---|
+| vision-region-capture-tail | PASS 4/4 | 3664, 3157, 3470, 2460 | 3313ms |
+| vision-full-screen-capture-tail | FAIL 4/4, `missing: DEFAULT_POOLSIZE` | 6156, 3413, 4071, 4067 | 4069ms |
 
 That is the whole argument for defaulting to region capture, in two lines: asked
 the same shape of question about the bottom of the same file, the model answers
 it from a 1440x900 region and does not answer it from a 2560x1600 full screen.
-The full-screen capture is also the slower of the two, so the larger image buys
-nothing. Neither number is a regression to chase; the pair is the instrument.
+The pass/fail split is 4/4 in both directions, so it is not noise. The pair is
+the instrument, not a regression to chase.
+
+**Read the latency column carefully, and do not repeat the mistake made here
+first.** A single run put full screen at 6156ms against region's 3664ms, which
+was written up as the larger image costing 1.7x. Three more runs put the real
+gap at about 750ms, and 6156ms was a cold first call.
+
+The gap is also not the payload. Base64 for the full-screen fixture is 557KB
+against the region fixture's 897KB, because the region capture is a
+deviceScaleFactor 2 grab and happens to compress worse. What tracks the latency
+is pixels: 2560x1600 is 4.1MP against 1.3MP, roughly 3x the vision tokens no
+matter what the PNG compresses to. Anything sizing a capture for speed should
+size it in pixels and ignore the byte count.
+
+None of that time is Omni's own. `node evals/scripts/latency-breakdown.ts`
+measures every step before the request leaves the process, with `fetch` stubbed,
+and the whole of it is under 2ms including a 897KB base64. `deepVariableReplacer`
+walking that payload is 0.08ms. Client-side assembly is not worth optimising, and
+that script exists so the claim stays checkable for free.
 
 Read that number with suspicion rather than satisfaction. **A suite that scores
 100% on its first run has no headroom**, so it cannot currently distinguish a
