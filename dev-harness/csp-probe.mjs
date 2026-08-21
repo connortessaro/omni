@@ -71,7 +71,9 @@ const assets = () => {
 
 const contentType = (name) => {
   if (name.endsWith(".wasm")) return "application/wasm";
-  if (name.endsWith(".js")) return "text/javascript";
+  // `.mjs` does not end with `.js`. onnxruntime loads its glue file as a module
+  // script, and the browser rejects a non-JavaScript MIME type outright.
+  if (name.endsWith(".js") || name.endsWith(".mjs")) return "text/javascript";
   if (name.endsWith(".html")) return "text/html";
   return "application/octet-stream";
 };
@@ -115,6 +117,15 @@ window.__RUN__ = async () => {
     await ctx.close();
     return "${a.worklet} registered";
   });
+  // WebAssembly.compile above only proves the bytes are acceptable. This proves
+  // onnxruntime can actually stand up a session, which is what needs the .mjs
+  // glue sitting next to the .wasm, and is the part a version bump breaks.
+  await step("onnxruntime initialises and loads the model", async () => {
+    const ort = await import("/harness/ort.wasm.bundle.min.mjs");
+    ort.env.wasm.wasmPaths = "/vad/";
+    const session = await ort.InferenceSession.create("/vad/${a.model}");
+    return "session created, inputs [" + session.inputNames.join(", ") + "]";
+  });
   await step("the upstream CDN default stays blocked", async () => {
     try {
       await fetch(${JSON.stringify(CDN_ASSET)});
@@ -149,6 +160,20 @@ const run = async () => {
       const file = join(DIST_VAD, name);
       if (existsSync(file)) {
         res.setHeader("Content-Type", contentType(name));
+        return res.end(readFileSync(file));
+      }
+    }
+    // Harness-only, deliberately not under /vad/: onnxruntime's prebuilt ESM
+    // bundle, used to drive a real session against the shipped wasm. The app
+    // bundles onnxruntime through vite instead, but both reach the binary the
+    // same way, through env.wasm.wasmPaths.
+    if (url === "/harness/ort.wasm.bundle.min.mjs") {
+      const file = join(
+        ROOT,
+        "node_modules/onnxruntime-web/dist/ort.wasm.bundle.min.mjs"
+      );
+      if (existsSync(file)) {
+        res.setHeader("Content-Type", "text/javascript");
         return res.end(readFileSync(file));
       }
     }

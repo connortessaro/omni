@@ -37,13 +37,18 @@ const harnessMock = (): PluginOption => ({
 /**
  * Serves the VAD model/runtime assets that @ricky0123/vad-web fetches at
  * startup: the Silero ONNX model, its audio worklet, and the onnxruntime-web
- * wasm binaries. Upstream defaults point these at jsdelivr
- * (baseAssetPath/onnxWASMBasePath), and the app's CSP deliberately does not
- * allow that host -- connect-src and script-src stay locked to 'self' rather
- * than growing an allowlist for one dependency. So these ship from
- * node_modules as same-origin static assets instead, at /vad/<basename> in
- * dev and dist/vad/<basename> in the build, matching the baseAssetPath and
- * onnxWASMBasePath set in AutoSpeechVad.tsx.
+ * wasm binary with its glue module. They ship from node_modules as same-origin
+ * static assets at /vad/<basename> in dev and dist/vad/<basename> in the build,
+ * matching the baseAssetPath and onnxWASMBasePath set in AutoSpeechVad.tsx.
+ *
+ * vad-web 0.0.24 defaulted these paths to jsdelivr, which the CSP blocks, and
+ * that is what left the microphone dead between `eb8b2ce` and `5696df7`. 0.0.30
+ * defaults them to "./" instead, but they are still set explicitly here and in
+ * the component: connect-src and script-src stay locked to 'self' rather than
+ * growing an allowlist for one dependency, so the assets have to be local
+ * regardless of what upstream defaults to next.
+ *
+ * `npm run csp:probe` gates all of this against the real policy in WebKit.
  */
 const vadAssetSources = [
   path.resolve(
@@ -54,11 +59,19 @@ const vadAssetSources = [
     __dirname,
     "node_modules/@ricky0123/vad-web/dist/vad.worklet.bundle.min.js"
   ),
+  // onnxruntime-web 1.17 replaced the separate ort-wasm.wasm and
+  // ort-wasm-simd.wasm builds with one threaded build, and split out a .mjs
+  // glue module that the runtime imports next to the binary. Both have to ship:
+  // with only the .wasm, ort resolves the .mjs against wasmPaths, 404s, and
+  // fails to initialise.
   path.resolve(
     __dirname,
-    "node_modules/onnxruntime-web/dist/ort-wasm-simd.wasm"
+    "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm"
   ),
-  path.resolve(__dirname, "node_modules/onnxruntime-web/dist/ort-wasm.wasm"),
+  path.resolve(
+    __dirname,
+    "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs"
+  ),
 ];
 
 for (const source of vadAssetSources) {
@@ -69,7 +82,12 @@ for (const source of vadAssetSources) {
 
 const vadContentType = (filePath: string): string => {
   if (filePath.endsWith(".wasm")) return "application/wasm";
-  if (filePath.endsWith(".js")) return "text/javascript";
+  // `.mjs` does not end with `.js`, and onnxruntime loads its glue file as a
+  // module script, which the browser refuses unless the MIME type is a
+  // JavaScript one. Serving it as octet-stream fails the whole VAD with
+  // "no available backend found".
+  if (filePath.endsWith(".js") || filePath.endsWith(".mjs"))
+    return "text/javascript";
   return "application/octet-stream";
 };
 
