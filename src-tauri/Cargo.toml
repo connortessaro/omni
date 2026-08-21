@@ -45,24 +45,12 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-macos-permissions = "2"
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
-# System-audio capture via ScreenCaptureKit. These are objc2 framework bindings:
-# they link the frameworks declaratively and compile no Objective-C, so unlike
-# `cidre` they build with Command Line Tools and need no full Xcode install.
+# System-audio capture via CoreAudio process taps. These are objc2 framework
+# bindings: they link the frameworks declaratively and compile no Objective-C,
+# so unlike `cidre` they build with Command Line Tools and need no full Xcode.
 objc2 = "0.6.4"
 objc2-foundation = "0.3.2"
-objc2-screen-capture-kit = { version = "0.3.2", features = [
-    "SCStream",
-    "SCShareableContent",
-    "block2",
-    "dispatch2",
-    "objc2-core-media",
-] }
-objc2-core-media = { version = "0.3.2", features = [
-    "CMSampleBuffer",
-    "CMBlockBuffer",
-    "CMFormatDescription",
-    "objc2-core-audio-types",
-] }
+objc2-core-audio = "0.3.2"
 objc2-core-audio-types = "0.3.2"
 objc2-core-foundation = "0.3.2"
 block2 = "0.6.2"

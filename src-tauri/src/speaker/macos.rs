@@ -1,103 +1,267 @@
 // Omni macos speaker input and stream
 //
-// System audio is captured with ScreenCaptureKit: an SCStream configured for
-// audio only, whose SCStreamOutput callback lands on a dispatch queue and
-// pushes mono f32 samples into the same queue-and-waker shape windows.rs and
-// linux.rs use.
+// System audio is captured with a CoreAudio process tap
+// (`AudioHardwareCreateProcessTap`, macOS 14.2+): a global tap over the output
+// mix feeds a private aggregate device, whose IOProc lands on a dispatch queue
+// and pushes mono f32 samples into the same queue-and-waker shape windows.rs
+// and linux.rs use.
 //
-// ScreenCaptureKit authorizes against Screen Recording, which the app already
-// holds for screenshots, so this adds no second permission prompt. It also
-// needs no Objective-C of its own: the objc2 bindings link the framework
-// declaratively, which is what makes this buildable with Command Line Tools
-// where the earlier `cidre` (CoreAudio process taps) attempt was not.
+// This replaced a working ScreenCaptureKit implementation for one reason. SCK
+// authorizes against Screen Recording, and while an SCStream is live macOS adds
+// a menu-bar item that reads "Screen Recording and System Audio Recording are
+// in use" (measured by reading Control Center's accessibility tree, which,
+// unlike a screenshot, does not itself count as screen capture). A process tap
+// adds nothing to the menu bar while capturing. For an assistant that overlays
+// other apps as a content-protected panel, announcing itself in the menu bar
+// defeats the point.
+//
+// A tap is also a better fit mechanically: it delivers the mix already mono at
+// the device's own sample rate, so there is no downmix and no resample, and it
+// needs no Screen Recording grant.
+//
+// Like the SCK version, this compiles with Command Line Tools only. The
+// `objc2-*` bindings link frameworks declaratively and compile no
+// Objective-C, which is what the earlier `cidre` attempt could not do.
 use super::AudioDevice;
 use anyhow::{anyhow, Result};
 use futures_util::Stream;
 use std::collections::VecDeque;
+use std::ffi::c_void;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::task::{Poll, Waker};
 use std::thread;
 use std::time::Duration;
-use tracing::error;
+use tracing::{error, warn};
 
 use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
-use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
-use objc2_core_audio_types::AudioBufferList;
-use objc2_core_media::CMSampleBuffer;
-use objc2_foundation::{NSArray, NSError, NSObject, NSObjectProtocol};
-use objc2_screen_capture_kit::{
-    SCContentFilter, SCShareableContent, SCStream, SCStreamConfiguration, SCStreamOutput,
-    SCStreamOutputType, SCWindow,
+use objc2::AllocAnyThread;
+use objc2_core_audio::{
+    kAudioAggregateDeviceIsPrivateKey, kAudioAggregateDeviceIsStackedKey,
+    kAudioAggregateDeviceNameKey, kAudioAggregateDeviceTapListKey, kAudioAggregateDeviceUIDKey,
+    kAudioHardwarePropertyTranslatePIDToProcessObject, kAudioObjectPropertyElementMain,
+    kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject, kAudioSubTapDriftCompensationKey,
+    kAudioSubTapUIDKey, kAudioTapPropertyFormat, AudioDeviceCreateIOProcIDWithBlock,
+    AudioDeviceDestroyIOProcID, AudioDeviceIOProcID, AudioDeviceStart, AudioDeviceStop,
+    AudioHardwareCreateAggregateDevice, AudioHardwareCreateProcessTap,
+    AudioHardwareDestroyAggregateDevice, AudioHardwareDestroyProcessTap,
+    AudioObjectGetPropertyData, AudioObjectID, AudioObjectPropertyAddress, CATapDescription,
 };
+use objc2_core_audio_types::{AudioBufferList, AudioStreamBasicDescription, AudioTimeStamp};
+use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSObject, NSString};
 
-const SAMPLE_RATE: u32 = 48_000;
-const CHANNELS: u32 = 2;
+/// Only used when the tap will not report its own format, which should not
+/// happen; the real rate comes from `kAudioTapPropertyFormat`.
+const FALLBACK_SAMPLE_RATE: u32 = 48_000;
 
-// ScreenCaptureKit taps the whole output mix and offers no per-device
-// selection, so there is exactly one thing to capture. Reporting a list of
-// output devices that all behaved identically would be a dropdown that does
-// nothing.
+/// A process tap captures the whole output mix and offers no per-device
+/// selection, so there is exactly one thing to capture. Listing several output
+/// devices that all behaved identically would be a dropdown that does nothing.
 const SYSTEM_MIX_ID: &str = "system-mix";
 
-// Matching windows.rs and linux.rs, which cap at the same figure.
+/// Matching windows.rs and linux.rs, which cap at the same figure.
 const MAX_BUFFER_SIZE: usize = 131072;
 
-// Long enough to cover a permission prompt the user has to read.
-const SHAREABLE_CONTENT_TIMEOUT: Duration = Duration::from_secs(30);
-const START_CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
+const AGGREGATE_UID: &str = "com.connortessaro.omni.system-audio";
 
-/// Asks ScreenCaptureKit what is capturable. Doubles as the authorization
-/// probe: when Screen Recording has not been granted this is the call that
-/// fails, and its message is what the user needs to see.
-fn shareable_content() -> Result<Retained<SCShareableContent>> {
-    let (tx, rx) = mpsc::channel();
-    let handler =
-        block2::RcBlock::new(move |content: *mut SCShareableContent, err: *mut NSError| {
-            let result = if content.is_null() {
-                let detail = if err.is_null() {
-                    "ScreenCaptureKit returned no content and no error".to_string()
-                } else {
-                    unsafe { (*err).localizedDescription() }.to_string()
-                };
-                Err(detail)
-            } else {
-                match unsafe { Retained::retain(content) } {
-                    Some(retained) => Ok(SendPtr(retained)),
-                    None => Err("ScreenCaptureKit content could not be retained".to_string()),
-                }
-            };
-            let _ = tx.send(result);
-        });
+fn ns(text: &str) -> Retained<NSString> {
+    NSString::from_str(text)
+}
 
-    unsafe { SCShareableContent::getShareableContentWithCompletionHandler(&handler) };
+/// CoreAudio's aggregate-device keys are plain C string literals rather than
+/// CFStrings, so they need bridging into NSString to build the description.
+fn key(name: &std::ffi::CStr) -> Retained<NSString> {
+    NSString::from_str(name.to_str().expect("CoreAudio keys are ASCII"))
+}
 
-    match rx.recv_timeout(SHAREABLE_CONTENT_TIMEOUT) {
-        Ok(Ok(content)) => Ok(content.0),
-        Ok(Err(detail)) => Err(anyhow!(
-            "system audio capture needs Screen Recording permission: {detail}"
-        )),
-        Err(_) => Err(anyhow!(
-            "timed out waiting for ScreenCaptureKit to report capturable content"
-        )),
+fn address(selector: u32) -> AudioObjectPropertyAddress {
+    AudioObjectPropertyAddress {
+        mSelector: selector,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain,
     }
 }
 
-/// ScreenCaptureKit delivers its completion handler on its own queue, so the
-/// retained result has to cross a channel back to the caller. The pointer is
-/// only ever dereferenced on the receiving thread, and SCShareableContent is
-/// not main-thread-bound.
-struct SendPtr(Retained<SCShareableContent>);
-unsafe impl Send for SendPtr {}
+/// Resolves this process to the audio object CoreAudio knows it by, so the tap
+/// can leave Omni's own output out of the mix. Best effort: if it fails the tap
+/// still works, it just also hears anything Omni plays.
+fn own_audio_object() -> Option<AudioObjectID> {
+    let pid: i32 = std::process::id() as i32;
+    let mut object: AudioObjectID = 0;
+    let addr = address(kAudioHardwarePropertyTranslatePIDToProcessObject);
+    let mut size = std::mem::size_of::<AudioObjectID>() as u32;
+
+    let status = unsafe {
+        AudioObjectGetPropertyData(
+            kAudioObjectSystemObject as AudioObjectID,
+            std::ptr::NonNull::from(&addr),
+            std::mem::size_of::<i32>() as u32,
+            &pid as *const i32 as *const c_void,
+            std::ptr::NonNull::from(&mut size),
+            std::ptr::NonNull::new(&mut object as *mut AudioObjectID as *mut c_void).unwrap(),
+        )
+    };
+
+    if status == 0 && object != 0 {
+        Some(object)
+    } else {
+        warn!("could not resolve Omni's own audio process object (status {status}); system audio capture will include Omni's own output");
+        None
+    }
+}
+
+/// The tap's own stream format. Its sample rate follows the current output
+/// device, so it must be read rather than assumed.
+fn tap_sample_rate(tap: AudioObjectID) -> u32 {
+    let addr = address(kAudioTapPropertyFormat);
+    let mut asbd: AudioStreamBasicDescription = unsafe { std::mem::zeroed() };
+    let mut size = std::mem::size_of::<AudioStreamBasicDescription>() as u32;
+
+    let status = unsafe {
+        AudioObjectGetPropertyData(
+            tap,
+            std::ptr::NonNull::from(&addr),
+            0,
+            std::ptr::null(),
+            std::ptr::NonNull::from(&mut size),
+            std::ptr::NonNull::new(&mut asbd as *mut AudioStreamBasicDescription as *mut c_void)
+                .unwrap(),
+        )
+    };
+
+    let rate = asbd.mSampleRate as u32;
+    if status != 0 || !(8000..=96000).contains(&rate) {
+        warn!("tap reported an unusable sample rate (status {status}, rate {rate}); falling back to {FALLBACK_SAMPLE_RATE}");
+        return FALLBACK_SAMPLE_RATE;
+    }
+    rate
+}
+
+/// A tap plus the private aggregate device that reads it. Both are torn down on
+/// drop, in order, so a failed setup cannot leak a device into the user's audio
+/// configuration.
+struct Tap {
+    tap_id: AudioObjectID,
+    aggregate_id: AudioObjectID,
+    sample_rate: u32,
+}
+
+impl Tap {
+    fn new() -> Result<Self> {
+        let excluded: Retained<NSArray<NSNumber>> = match own_audio_object() {
+            Some(object) => NSArray::from_retained_slice(&[NSNumber::new_u32(object)]),
+            None => NSArray::new(),
+        };
+
+        // Mono, because the pipeline downstream is single channel and the tap
+        // will mix it for us rather than us averaging planes afterwards.
+        let description = unsafe {
+            CATapDescription::initMonoGlobalTapButExcludeProcesses(
+                CATapDescription::alloc(),
+                &excluded,
+            )
+        };
+        unsafe {
+            description.setName(&ns("Omni system audio"));
+            // Keeps the tap out of the system's audio device list.
+            description.setPrivate(true);
+        }
+
+        let mut tap_id: AudioObjectID = 0;
+        let status = unsafe { AudioHardwareCreateProcessTap(Some(&description), &mut tap_id) };
+        if status != 0 || tap_id == 0 {
+            return Err(anyhow!(
+                "could not create the system audio tap (status {status}). System audio capture needs macOS 14.2 or later."
+            ));
+        }
+
+        let sample_rate = tap_sample_rate(tap_id);
+
+        // The sub-tap is addressed by the description's UUID.
+        let uid = unsafe { description.UUID().UUIDString() };
+        let sub_tap: Retained<NSDictionary<NSString, NSObject>> = NSDictionary::from_slices(
+            &[
+                &*key(kAudioSubTapUIDKey),
+                &*key(kAudioSubTapDriftCompensationKey),
+            ],
+            &[
+                &*Retained::into_super(uid),
+                &*Retained::into_super(Retained::into_super(NSNumber::new_bool(true))),
+            ],
+        );
+        let tap_list: Retained<NSArray<NSDictionary<NSString, NSObject>>> =
+            NSArray::from_slice(&[&*sub_tap]);
+
+        let aggregate_description = NSDictionary::from_slices(
+            &[
+                &*key(kAudioAggregateDeviceNameKey),
+                &*key(kAudioAggregateDeviceUIDKey),
+                &*key(kAudioAggregateDeviceIsPrivateKey),
+                &*key(kAudioAggregateDeviceIsStackedKey),
+                &*key(kAudioAggregateDeviceTapListKey),
+            ],
+            &[
+                &*Retained::into_super(ns("Omni System Audio")),
+                &*Retained::into_super(ns(AGGREGATE_UID)),
+                // Private, so it never shows up as a selectable output device.
+                &*Retained::into_super(Retained::into_super(NSNumber::new_bool(true))),
+                &*Retained::into_super(Retained::into_super(NSNumber::new_bool(false))),
+                &*Retained::into_super(tap_list),
+            ],
+        );
+
+        // NSDictionary and CFDictionary are toll-free bridged.
+        let cf_description = unsafe {
+            &*(Retained::as_ptr(&aggregate_description)
+                as *const objc2_core_foundation::CFDictionary)
+        };
+
+        let mut aggregate_id: AudioObjectID = 0;
+        let status = unsafe {
+            AudioHardwareCreateAggregateDevice(
+                cf_description,
+                std::ptr::NonNull::from(&mut aggregate_id),
+            )
+        };
+        if status != 0 || aggregate_id == 0 {
+            unsafe { AudioHardwareDestroyProcessTap(tap_id) };
+            return Err(anyhow!(
+                "could not create the aggregate device for the system audio tap (status {status})"
+            ));
+        }
+
+        Ok(Self {
+            tap_id,
+            aggregate_id,
+            sample_rate,
+        })
+    }
+}
+
+impl Drop for Tap {
+    fn drop(&mut self) {
+        // Aggregate first: it holds the tap.
+        let status = unsafe { AudioHardwareDestroyAggregateDevice(self.aggregate_id) };
+        if status != 0 {
+            error!("failed to destroy the system audio aggregate device (status {status})");
+        }
+        let status = unsafe { AudioHardwareDestroyProcessTap(self.tap_id) };
+        if status != 0 {
+            error!("failed to destroy the system audio tap (status {status})");
+        }
+    }
+}
 
 pub fn get_output_devices() -> Result<Vec<AudioDevice>> {
-    // Fails when Screen Recording has not been granted, which is what the
-    // settings page needs to be able to say.
-    shareable_content()?;
+    // Creating and immediately dropping a tap is the honest availability check:
+    // it fails on macOS below 14.2 and if the platform refuses the tap, which
+    // is what the settings page needs to be able to say.
+    let tap = Tap::new()?;
+    let rate = tap.sample_rate;
+    drop(tap);
 
     Ok(vec![AudioDevice {
         id: SYSTEM_MIX_ID.to_string(),
-        name: "System audio (all output)".to_string(),
+        name: format!("System audio (all output, {} kHz)", rate / 1000),
         is_default: true,
     }])
 }
@@ -106,13 +270,13 @@ pub struct SpeakerInput;
 
 impl SpeakerInput {
     /// `device_id` is accepted for parity with the other platforms and ignored:
-    /// ScreenCaptureKit captures the output mix, and `get_output_devices`
-    /// offers only that one entry.
+    /// a global tap captures the output mix, and `get_output_devices` offers
+    /// only that one entry.
     pub fn new(_device_id: Option<String>) -> Result<Self> {
-        // Verify authorization here rather than in the capture thread, so
-        // `check_system_audio_access` gets a real answer and a denied
-        // permission surfaces as an error instead of a silent dead stream.
-        shareable_content()?;
+        // Verify here rather than in the capture thread, so
+        // `check_system_audio_access` gets a real answer and an unsupported
+        // platform surfaces as an error instead of a silent dead stream.
+        drop(Tap::new()?);
         Ok(Self)
     }
 
@@ -138,15 +302,15 @@ impl SpeakerInput {
             }
         });
 
-        let actual_sample_rate = match init_rx.recv_timeout(SHAREABLE_CONTENT_TIMEOUT) {
+        let actual_sample_rate = match init_rx.recv_timeout(Duration::from_secs(10)) {
             Ok(Ok(rate)) => rate,
             Ok(Err(e)) => {
                 error!("Omni Audio initialization failed: {}", e);
-                SAMPLE_RATE
+                FALLBACK_SAMPLE_RATE
             }
             Err(_) => {
                 error!("Omni Audio initialization timeout");
-                SAMPLE_RATE
+                FALLBACK_SAMPLE_RATE
             }
         };
 
@@ -164,259 +328,6 @@ struct WakerState {
     waker: Option<Waker>,
     has_data: bool,
     shutdown: bool,
-}
-
-/// Shared with the ScreenCaptureKit callback, which runs on a dispatch queue.
-struct TapIvars {
-    sample_queue: Arc<Mutex<VecDeque<f32>>>,
-    waker_state: Arc<Mutex<WakerState>>,
-}
-
-define_class!(
-    #[unsafe(super(NSObject))]
-    #[name = "OmniSystemAudioTap"]
-    #[ivars = TapIvars]
-    struct AudioTap;
-
-    unsafe impl NSObjectProtocol for AudioTap {}
-
-    unsafe impl SCStreamOutput for AudioTap {
-        #[unsafe(method(stream:didOutputSampleBuffer:ofType:))]
-        unsafe fn did_output_sample_buffer(
-            &self,
-            _stream: &SCStream,
-            sample_buffer: &CMSampleBuffer,
-            output_type: SCStreamOutputType,
-        ) {
-            if output_type != SCStreamOutputType::Audio {
-                return;
-            }
-
-            let samples = match unsafe { mono_samples(sample_buffer) } {
-                Ok(samples) => samples,
-                Err(e) => {
-                    error!("Omni Audio sample extraction failed: {}", e);
-                    return;
-                }
-            };
-            if samples.is_empty() {
-                return;
-            }
-
-            let dropped = {
-                let mut queue = self.ivars().sample_queue.lock().unwrap();
-                queue.extend(samples.iter());
-
-                if queue.len() > MAX_BUFFER_SIZE {
-                    let to_drop = queue.len() - MAX_BUFFER_SIZE;
-                    queue.drain(0..to_drop);
-                    to_drop
-                } else {
-                    0
-                }
-            };
-
-            if dropped > 0 {
-                error!("macOS buffer overflow - dropped {} samples", dropped);
-            }
-
-            let mut state = self.ivars().waker_state.lock().unwrap();
-            if !state.has_data {
-                state.has_data = true;
-                if let Some(waker) = state.waker.take() {
-                    drop(state);
-                    waker.wake();
-                }
-            }
-        }
-    }
-);
-
-/// Pulls one sample buffer out as mono f32.
-///
-/// ScreenCaptureKit hands over non-interleaved float32, one plane per channel,
-/// so the channels are averaged rather than read end to end.
-unsafe fn mono_samples(sample_buffer: &CMSampleBuffer) -> Result<Vec<f32>> {
-    // Two passes, because this call wants `buffer_list_size` to be *exactly*
-    // the size needed. Passing anything larger also fails with
-    // kCMSampleBufferError_ArrayTooSmall (-12737), so the size has to be asked
-    // for rather than over-provisioned.
-    let mut needed: usize = 0;
-    let status = unsafe {
-        sample_buffer.audio_buffer_list_with_retained_block_buffer(
-            &mut needed,
-            std::ptr::null_mut(),
-            0,
-            None,
-            None,
-            0,
-            std::ptr::null_mut(),
-        )
-    };
-    if needed == 0 {
-        return Err(anyhow!(
-            "could not size the audio buffer list (status {status})"
-        ));
-    }
-
-    let mut raw = vec![0u8; needed];
-    let mut block_buffer: *mut objc2_core_media::CMBlockBuffer = std::ptr::null_mut();
-    let status = unsafe {
-        sample_buffer.audio_buffer_list_with_retained_block_buffer(
-            &mut needed,
-            raw.as_mut_ptr() as *mut AudioBufferList,
-            needed,
-            None,
-            None,
-            0,
-            &mut block_buffer,
-        )
-    };
-    if status != 0 {
-        return Err(anyhow!("audio buffer list unavailable (status {status})"));
-    }
-
-    // Released when this drops; the call above retained it.
-    let _block_buffer = std::ptr::NonNull::new(block_buffer)
-        .map(|ptr| unsafe { objc2_core_foundation::CFRetained::from_raw(ptr) });
-
-    let list = unsafe { &*(raw.as_ptr() as *const AudioBufferList) };
-    let buffers =
-        unsafe { std::slice::from_raw_parts(list.mBuffers.as_ptr(), list.mNumberBuffers as usize) };
-
-    let planes: Vec<&[f32]> = buffers
-        .iter()
-        .filter(|buffer| !buffer.mData.is_null())
-        .map(|buffer| unsafe {
-            std::slice::from_raw_parts(
-                buffer.mData as *const f32,
-                buffer.mDataByteSize as usize / std::mem::size_of::<f32>(),
-            )
-        })
-        .collect();
-
-    Ok(downmix_to_mono(&planes))
-}
-
-/// Averages one plane per channel down to a single channel.
-///
-/// Shortest plane wins: a truncated trailing plane would otherwise be read past
-/// its end. Summing without dividing is the tempting version and it clips, so
-/// the scale stays.
-fn downmix_to_mono(planes: &[&[f32]]) -> Vec<f32> {
-    let Some(frames) = planes.iter().map(|plane| plane.len()).min() else {
-        return Vec::new();
-    };
-
-    let scale = 1.0 / planes.len() as f32;
-    (0..frames)
-        .map(|i| planes.iter().map(|plane| plane[i]).sum::<f32>() * scale)
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stereo_planes_average_into_one_channel() {
-        let left = [1.0f32, 0.5, -1.0];
-        let right = [0.0f32, 0.5, 1.0];
-
-        assert_eq!(
-            downmix_to_mono(&[&left, &right]),
-            vec![0.5, 0.5, 0.0],
-            "channels are averaged, not summed"
-        );
-    }
-
-    #[test]
-    fn a_full_scale_stereo_signal_stays_in_range() {
-        // Summing instead of averaging would give 2.0 here and clip the WAV.
-        let left = [1.0f32; 4];
-        let right = [1.0f32; 4];
-
-        for sample in downmix_to_mono(&[&left, &right]) {
-            assert!(sample <= 1.0, "sample {sample} exceeded full scale");
-        }
-    }
-
-    #[test]
-    fn mono_input_passes_through_unchanged() {
-        let only = [0.25f32, -0.75, 0.5];
-        assert_eq!(downmix_to_mono(&[&only]), only.to_vec());
-    }
-
-    #[test]
-    fn a_short_plane_bounds_the_output() {
-        // ScreenCaptureKit is expected to deliver equal-length planes, but
-        // indexing past a short one would read out of bounds.
-        let left = [1.0f32, 1.0, 1.0];
-        let right = [1.0f32];
-
-        assert_eq!(downmix_to_mono(&[&left, &right]).len(), 1);
-    }
-
-    #[test]
-    fn no_planes_yields_no_samples() {
-        assert!(downmix_to_mono(&[]).is_empty());
-    }
-
-    /// Captures the live system mix through the same API the app uses.
-    ///
-    /// Ignored by default because it needs Screen Recording granted to whatever
-    /// process runs the test, so it cannot pass in CI. Run it by hand, with
-    /// audio playing, to check the whole path rather than the arithmetic:
-    ///
-    /// ```text
-    /// cargo test --manifest-path src-tauri/Cargo.toml \
-    ///     -- --ignored --nocapture captures_the_live_system_mix
-    /// ```
-    #[test]
-    #[ignore = "needs Screen Recording authorization and real playback"]
-    fn captures_the_live_system_mix() {
-        use futures_util::StreamExt;
-
-        let wanted = SAMPLE_RATE as usize; // one second
-        let input = SpeakerInput::new(None).expect("system audio should be authorized");
-        let mut stream = input.stream();
-        assert_eq!(stream.sample_rate(), SAMPLE_RATE);
-
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let samples: Vec<f32> = runtime.block_on(async {
-            let collect = async {
-                let mut collected = Vec::with_capacity(wanted);
-                while collected.len() < wanted {
-                    match stream.next().await {
-                        Some(sample) => collected.push(sample),
-                        None => break,
-                    }
-                }
-                collected
-            };
-            tokio::time::timeout(Duration::from_secs(20), collect)
-                .await
-                .expect("capture stalled")
-        });
-
-        assert_eq!(
-            samples.len(),
-            wanted,
-            "the stream ended before delivering a second of audio"
-        );
-
-        let peak = samples.iter().fold(0.0f32, |acc, s| acc.max(s.abs()));
-        let rms =
-            (samples.iter().map(|s| (s * s) as f64).sum::<f64>() / samples.len() as f64).sqrt();
-        println!(
-            "captured {} samples, peak {peak:.6}, rms {rms:.6}",
-            samples.len()
-        );
-        assert!(
-            peak > 0.0,
-            "every sample was silent: play audio while running this test"
-        );
-    }
 }
 
 pub struct SpeakerStream {
@@ -438,102 +349,11 @@ impl SpeakerStream {
         init_tx: mpsc::Sender<Result<u32>>,
         shutdown: Arc<(Mutex<bool>, Condvar)>,
     ) -> Result<()> {
-        let setup = (|| -> Result<(Retained<SCStream>, Retained<AudioTap>)> {
-            let content = shareable_content()?;
-            let displays = unsafe { content.displays() };
-            let display = displays
-                .firstObject()
-                .ok_or_else(|| anyhow!("no display available to attach system audio capture to"))?;
-
-            // ScreenCaptureKit requires a content filter even for audio-only
-            // capture; the display is what scopes the audio to this machine's
-            // output.
-            let excluded: Retained<NSArray<SCWindow>> = NSArray::new();
-            let filter = unsafe {
-                SCContentFilter::initWithDisplay_excludingWindows(
-                    SCContentFilter::alloc(),
-                    &display,
-                    &excluded,
-                )
-            };
-
-            let config = unsafe { SCStreamConfiguration::new() };
-            unsafe {
-                config.setCapturesAudio(true);
-                config.setSampleRate(SAMPLE_RATE as isize);
-                config.setChannelCount(CHANNELS as isize);
-                // Otherwise Omni captures its own playback and feeds it back in.
-                config.setExcludesCurrentProcessAudio(true);
-                // No screen output is attached, so keep the video side minimal.
-                config.setWidth(2);
-                config.setHeight(2);
-            }
-
-            let tap = {
-                let this = AudioTap::alloc().set_ivars(TapIvars {
-                    sample_queue: sample_queue.clone(),
-                    waker_state: waker_state.clone(),
-                });
-                let tap: Retained<AudioTap> = unsafe { msg_send![super(this), init] };
-                tap
-            };
-
-            let stream = unsafe {
-                SCStream::initWithFilter_configuration_delegate(
-                    SCStream::alloc(),
-                    &filter,
-                    &config,
-                    None,
-                )
-            };
-
-            let queue = dispatch2::DispatchQueue::new("com.omni.system-audio", None);
-            unsafe {
-                stream.addStreamOutput_type_sampleHandlerQueue_error(
-                    ProtocolObject::from_ref(&*tap),
-                    SCStreamOutputType::Audio,
-                    Some(&queue),
-                )
-            }
-            .map_err(|e| {
-                anyhow!(
-                    "could not attach the audio output: {}",
-                    e.localizedDescription()
-                )
-            })?;
-
-            let (start_tx, start_rx) = mpsc::channel();
-            let start_handler = block2::RcBlock::new(move |err: *mut NSError| {
-                let _ = start_tx.send(if err.is_null() {
-                    Ok(())
-                } else {
-                    Err(unsafe { (*err).localizedDescription() }.to_string())
-                });
-            });
-            unsafe { stream.startCaptureWithCompletionHandler(Some(&start_handler)) };
-
-            match start_rx.recv_timeout(START_CAPTURE_TIMEOUT) {
-                Ok(Ok(())) => {}
-                Ok(Err(detail)) => {
-                    return Err(anyhow!("could not start system audio capture: {detail}"))
-                }
-                Err(_) => {
-                    return Err(anyhow!("timed out starting system audio capture"));
-                }
-            }
-
-            Ok((stream, tap))
-        })();
-
-        let (stream, tap) = match setup {
-            Ok(pair) => {
-                let _ = init_tx.send(Ok(SAMPLE_RATE));
-                pair
-            }
+        let tap = match Tap::new() {
+            Ok(tap) => tap,
             Err(e) => {
-                // Unblock any consumer already polling: without this the
-                // stream would sit Pending forever on a capture that never
-                // started.
+                // Unblock any consumer already polling: without this the stream
+                // would sit Pending forever on a capture that never started.
                 let mut state = waker_state.lock().unwrap();
                 state.shutdown = true;
                 if let Some(waker) = state.waker.take() {
@@ -545,8 +365,99 @@ impl SpeakerStream {
             }
         };
 
+        let queue_for_block = sample_queue.clone();
+        let waker_for_block = waker_state.clone();
+        let io_block = block2::RcBlock::new(
+            move |_now: std::ptr::NonNull<AudioTimeStamp>,
+                  input: std::ptr::NonNull<AudioBufferList>,
+                  _input_time: std::ptr::NonNull<AudioTimeStamp>,
+                  _output: std::ptr::NonNull<AudioBufferList>,
+                  _output_time: std::ptr::NonNull<AudioTimeStamp>| {
+                let list = unsafe { input.as_ref() };
+                let buffer_count = list.mNumberBuffers as usize;
+                if buffer_count == 0 {
+                    return;
+                }
+
+                let buffers =
+                    unsafe { std::slice::from_raw_parts(list.mBuffers.as_ptr(), buffer_count) };
+                let planes: Vec<&[f32]> = buffers
+                    .iter()
+                    .filter(|buffer| !buffer.mData.is_null())
+                    .map(|buffer| unsafe {
+                        std::slice::from_raw_parts(
+                            buffer.mData as *const f32,
+                            buffer.mDataByteSize as usize / std::mem::size_of::<f32>(),
+                        )
+                    })
+                    .collect();
+
+                // The tap is configured mono, so this is normally a copy. It
+                // stays here so a stereo tap could not read past a short plane.
+                let samples = downmix_to_mono(&planes);
+                if samples.is_empty() {
+                    return;
+                }
+
+                let dropped = {
+                    let mut queue = queue_for_block.lock().unwrap();
+                    queue.extend(samples.iter());
+
+                    if queue.len() > MAX_BUFFER_SIZE {
+                        let to_drop = queue.len() - MAX_BUFFER_SIZE;
+                        queue.drain(0..to_drop);
+                        to_drop
+                    } else {
+                        0
+                    }
+                };
+
+                if dropped > 0 {
+                    error!("macOS buffer overflow - dropped {} samples", dropped);
+                }
+
+                let mut state = waker_for_block.lock().unwrap();
+                if !state.has_data {
+                    state.has_data = true;
+                    if let Some(waker) = state.waker.take() {
+                        drop(state);
+                        waker.wake();
+                    }
+                }
+            },
+        );
+
+        let dispatch_queue =
+            dispatch2::DispatchQueue::new("com.connortessaro.omni.system-audio", None);
+        let mut proc_id: AudioDeviceIOProcID = None;
+        let status = unsafe {
+            AudioDeviceCreateIOProcIDWithBlock(
+                std::ptr::NonNull::from(&mut proc_id),
+                tap.aggregate_id,
+                Some(&dispatch_queue),
+                &*io_block as *const _ as *mut _,
+            )
+        };
+        if status != 0 {
+            let _ = init_tx.send(Err(anyhow!(
+                "could not attach to the system audio tap (status {status})"
+            )));
+            return Ok(());
+        }
+
+        let status = unsafe { AudioDeviceStart(tap.aggregate_id, proc_id) };
+        if status != 0 {
+            unsafe { AudioDeviceDestroyIOProcID(tap.aggregate_id, proc_id) };
+            let _ = init_tx.send(Err(anyhow!(
+                "could not start the system audio tap (status {status})"
+            )));
+            return Ok(());
+        }
+
+        let _ = init_tx.send(Ok(tap.sample_rate));
+
         // Samples arrive on the dispatch queue, so this thread only has to keep
-        // the stream alive until shutdown.
+        // the tap alive until shutdown.
         {
             let (lock, cvar) = &*shutdown;
             let mut stopping = lock.lock().unwrap();
@@ -555,31 +466,38 @@ impl SpeakerStream {
             }
         }
 
-        let (stop_tx, stop_rx) = mpsc::channel();
-        let stop_handler = block2::RcBlock::new(move |err: *mut NSError| {
-            let _ = stop_tx.send(if err.is_null() {
-                Ok(())
-            } else {
-                Err(unsafe { (*err).localizedDescription() }.to_string())
-            });
-        });
-        unsafe { stream.stopCaptureWithCompletionHandler(Some(&stop_handler)) };
-
-        match stop_rx.recv_timeout(START_CAPTURE_TIMEOUT) {
-            Ok(Ok(())) => {}
-            Ok(Err(detail)) => error!("Omni Audio stop failed: {}", detail),
-            Err(_) => error!("Omni Audio stop timed out"),
+        let status = unsafe { AudioDeviceStop(tap.aggregate_id, proc_id) };
+        if status != 0 {
+            error!("failed to stop the system audio tap (status {status})");
         }
-
-        let _ = unsafe {
-            stream.removeStreamOutput_type_error(
-                ProtocolObject::from_ref(&*tap),
-                SCStreamOutputType::Audio,
-            )
-        };
+        let status = unsafe { AudioDeviceDestroyIOProcID(tap.aggregate_id, proc_id) };
+        if status != 0 {
+            error!("failed to release the system audio IOProc (status {status})");
+        }
+        // `tap` drops here, tearing down the aggregate device and the tap.
 
         Ok(())
     }
+}
+
+/// Averages one plane per channel down to a single channel.
+///
+/// Shortest plane wins: a truncated trailing plane would otherwise be read past
+/// its end. Summing without dividing is the tempting version and it clips, so
+/// the scale stays.
+fn downmix_to_mono(planes: &[&[f32]]) -> Vec<f32> {
+    let Some(frames) = planes.iter().map(|plane| plane.len()).min() else {
+        return Vec::new();
+    };
+
+    if planes.len() == 1 {
+        return planes[0].to_vec();
+    }
+
+    let scale = 1.0 / planes.len() as f32;
+    (0..frames)
+        .map(|i| planes.iter().map(|plane| plane[i]).sum::<f32>() * scale)
+        .collect()
 }
 
 // Drops the audio stream
@@ -637,5 +555,114 @@ impl Stream for SpeakerStream {
             Some(sample) => Poll::Ready(Some(sample)),
             None => Poll::Pending,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_mono_plane_passes_through_unchanged() {
+        let only = [0.25f32, -0.75, 0.5];
+        assert_eq!(downmix_to_mono(&[&only]), only.to_vec());
+    }
+
+    #[test]
+    fn stereo_planes_average_into_one_channel() {
+        let left = [1.0f32, 0.5, -1.0];
+        let right = [0.0f32, 0.5, 1.0];
+
+        assert_eq!(
+            downmix_to_mono(&[&left, &right]),
+            vec![0.5, 0.5, 0.0],
+            "channels are averaged, not summed"
+        );
+    }
+
+    #[test]
+    fn a_full_scale_stereo_signal_stays_in_range() {
+        // Summing instead of averaging would give 2.0 here and clip the WAV.
+        let left = [1.0f32; 4];
+        let right = [1.0f32; 4];
+
+        for sample in downmix_to_mono(&[&left, &right]) {
+            assert!(sample <= 1.0, "sample {sample} exceeded full scale");
+        }
+    }
+
+    #[test]
+    fn a_short_plane_bounds_the_output() {
+        // The tap is configured mono, but indexing past a short plane would
+        // read out of bounds if that ever changed.
+        let left = [1.0f32, 1.0, 1.0];
+        let right = [1.0f32];
+
+        assert_eq!(downmix_to_mono(&[&left, &right]).len(), 1);
+    }
+
+    #[test]
+    fn no_planes_yields_no_samples() {
+        assert!(downmix_to_mono(&[]).is_empty());
+    }
+
+    /// Captures the live system mix through the same API the app uses.
+    ///
+    /// Ignored by default because it needs real playback, so it cannot pass in
+    /// CI. Run it by hand, with audio playing, to check the whole path rather
+    /// than the arithmetic:
+    ///
+    /// ```text
+    /// cargo test --manifest-path src-tauri/Cargo.toml \
+    ///     -- --ignored --nocapture captures_the_live_system_mix
+    /// ```
+    #[test]
+    #[ignore = "needs real playback through the default output device"]
+    fn captures_the_live_system_mix() {
+        use futures_util::StreamExt;
+
+        let input = SpeakerInput::new(None).expect("system audio tap should be available");
+        let mut stream = input.stream();
+        let rate = stream.sample_rate();
+        assert!(
+            (8000..=96000).contains(&rate),
+            "implausible sample rate {rate}"
+        );
+
+        let wanted = rate as usize; // one second
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let samples: Vec<f32> = runtime.block_on(async {
+            let collect = async {
+                let mut collected = Vec::with_capacity(wanted);
+                while collected.len() < wanted {
+                    match stream.next().await {
+                        Some(sample) => collected.push(sample),
+                        None => break,
+                    }
+                }
+                collected
+            };
+            tokio::time::timeout(Duration::from_secs(20), collect)
+                .await
+                .expect("capture stalled")
+        });
+
+        assert_eq!(
+            samples.len(),
+            wanted,
+            "the stream ended before delivering a second of audio"
+        );
+
+        let peak = samples.iter().fold(0.0f32, |acc, s| acc.max(s.abs()));
+        let rms =
+            (samples.iter().map(|s| (s * s) as f64).sum::<f64>() / samples.len() as f64).sqrt();
+        println!(
+            "captured {} samples at {rate} Hz, peak {peak:.6}, rms {rms:.6}",
+            samples.len()
+        );
+        assert!(
+            peak > 0.0,
+            "every sample was silent: play audio while running this test"
+        );
     }
 }

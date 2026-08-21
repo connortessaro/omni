@@ -516,11 +516,13 @@ pub fn check_system_audio_access(_app: AppHandle) -> Result<bool, String> {
 pub async fn request_system_audio_access(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        // Capture goes through ScreenCaptureKit, so the switch the user needs is
-        // under Screen Recording, not Audio Capture.
+        // A CoreAudio process tap needs no Screen Recording grant, so this no
+        // longer points at that pane. No prompt was observed for the tap
+        // itself; the audio pane is the closest thing to somewhere useful if a
+        // future macOS starts gating it.
         app.shell()
             .command("open")
-            .args(["x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"])
+            .args(["x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"])
             .spawn()
             .map_err(|e| {
                 error!("Failed to open system preferences: {}", e);
