@@ -75,6 +75,8 @@ export const Input = ({
   addContextBlock,
   removeContextBlock,
   historyNotice,
+  showCaptureHint,
+  setShowCaptureHint,
 }: UseCompletionReturn & { isHidden: boolean }) => {
   const [clipboardSnippet, setClipboardSnippet] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -326,8 +328,47 @@ export const Input = ({
                 }`}
               />
 
-            {/* Smart Clipboard Inline AI Actions */}
-            {clipboardSnippet && !input && !isPopoverOpen && !isLoading && (
+            {/* Said once, after the first whole-screen capture. A native-resolution
+                grab is transcribed to about 60% and then stops without saying so,
+                and the region path measures 0-1.7% character error. Carries
+                data-hud-overlay so the native window does not grow under it. */}
+            {showCaptureHint && (
+              <div
+                data-hud-overlay
+                className="absolute left-0 right-0 top-full mt-2 flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl bg-card/95 backdrop-blur-2xl border border-white/10 shadow-xl text-xs animate-in fade-in slide-in-from-top-1 duration-150 z-40"
+              >
+                {/* Wraps rather than truncates: the usable prompt column is
+                    about 212px, and `truncate` cut the sentence at "lose
+                    detail…", dropping the only actionable half. */}
+                <span
+                  data-slot="capture-hint"
+                  className="text-[11px] leading-snug text-muted-foreground"
+                >
+                  Whole-screen captures lose detail. Drag a region to read
+                  accurately.
+                </span>
+                <button
+                  type="button"
+                  data-slot="capture-hint-dismiss"
+                  onClick={() => setShowCaptureHint(false)}
+                  title="Dismiss capture tip"
+                  className="cursor-pointer shrink-0 rounded text-muted-foreground/70 transition hover:text-destructive"
+                >
+                  <XIcon className="size-2.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Smart Clipboard Inline AI Actions
+                Suppressed while the capture tip is up: both bars are positioned
+                at top-full, so rendering them together stacks one behind the
+                other. The tip answers an action the user just took, so it wins,
+                and the peek re-arms on the next clipboard change. */}
+            {clipboardSnippet &&
+              !showCaptureHint &&
+              !input &&
+              !isPopoverOpen &&
+              !isLoading && (
               <div
                 data-hud-overlay
                 className="absolute left-0 right-0 top-full mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-2 py-1.5 rounded-xl bg-card/95 backdrop-blur-2xl border border-white/10 shadow-xl text-xs animate-in fade-in slide-in-from-top-1 duration-150 z-40">

@@ -99,6 +99,7 @@ export const useCompletion = () => {
   const [messageHistoryOpen, setMessageHistoryOpen] = useState(false);
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
   const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
+  const [showCaptureHint, setShowCaptureHint] = useState(false);
   const [keepEngaged, setKeepEngaged] = useState(false);
   const [promptHistory, setPromptHistory] = useState<string[]>(() => {
     try {
@@ -1167,6 +1168,18 @@ export const useCompletion = () => {
     // The region shortcut reaches the accurate path without a trip to Settings,
     // so it overrides the saved mode instead of reading it.
     const useFullScreen = config.enabled && !forceRegion;
+
+    // Told once, then never again, and before the permission check rather than
+    // after it: a capture is not the moment for a lecture, but silently reading
+    // 60% of the screen and stopping is worse.
+    if (
+      useFullScreen &&
+      safeLocalStorage.getItem(STORAGE_KEYS.FULL_SCREEN_CAPTURE_HINT) !== "seen"
+    ) {
+      safeLocalStorage.setItem(STORAGE_KEYS.FULL_SCREEN_CAPTURE_HINT, "seen");
+      setShowCaptureHint(true);
+    }
+
     screenshotInitiatedByThisContext.current = true;
     setIsScreenshotLoading(true);
 
@@ -1374,6 +1387,8 @@ export const useCompletion = () => {
     inputRef,
     captureScreenshot,
     isScreenshotLoading,
+    showCaptureHint,
+    setShowCaptureHint,
     keepEngaged,
     setKeepEngaged,
   };
