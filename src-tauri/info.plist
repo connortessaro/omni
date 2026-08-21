@@ -4,15 +4,15 @@
 <dict>
   <!-- Microphone Access - Only for voice input, NOT for system audio capture -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Omni needs access to your microphone for voice input functionality. System audio capture uses virtual audio devices and does not access your microphone.</string>
+  <string>Omni uses your microphone for voice input. System audio capture is separate and does not use your microphone.</string>
   
   <!-- Screen Capture -->
   <key>NSScreenCaptureUsageDescription</key>
-  <string>Omni needs access to screen capture for screenshot functionality</string>
+  <string>Omni captures your screen only when you take a screenshot to ask about it.</string>
   
   <!-- System Audio -->
   <key>NSAudioCaptureUsageDescription</key>
-  <string>Omni needs access to system audio to process transcription and AI responses.</string>
+  <string>Omni records what your speakers play so it can transcribe it and answer about it.</string>
 
   <!-- Privacy - Audio Processing -->
   <key>NSPrivacyAccessedAPITypes</key>

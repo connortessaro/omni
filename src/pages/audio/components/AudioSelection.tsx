@@ -336,9 +336,9 @@ export const AudioSelection = () => {
               <strong>⚠️ Couldn't load output devices.</strong> {outputError}
               {isMacOS() && (
                 <span className="mt-1 block">
-                  macOS captures system audio through Screen Recording. Turn
-                  Omni on in System Settings, Privacy &amp; Security, Screen
-                  &amp; System Audio Recording, then restart Omni.
+                  System audio capture needs macOS 14.2 or later. It records
+                  what your speakers play, never your microphone, and it does
+                  not need Screen Recording access.
                 </span>
               )}
             </div>

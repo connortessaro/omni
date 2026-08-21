@@ -20,6 +20,7 @@
     "eval:run": "node evals/scripts/run-eval.ts",
     "hud:probe": "node dev-harness/probe.mjs",
     "csp:probe": "node dev-harness/csp-probe.mjs",
+    "audio:indicator-probe": "zsh dev-harness/indicator-probe.sh",
     "check:commands": "node scripts/check-commands.mjs",
     "verify:models": "node scripts/verify-model-listing.mjs",
     "verify:agent": "node scripts/verify-agent-loop.mjs"

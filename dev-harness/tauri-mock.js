@@ -123,13 +123,13 @@
     start_screen_capture: () => null,
     capture_selected_area: () => null,
     close_overlay_window: () => null,
-    // macOS captures system audio through ScreenCaptureKit
-    // (src-tauri/src/speaker/macos.rs), which authorizes against Screen
-    // Recording. This mirrors the granted path, because that is the state the
-    // layout probe needs to exercise. The denied path is a rejection from
-    // get_output_devices, not an empty list: resolving empty is what let a
-    // fabricated waveform pass as a working pipeline before, so keep these two
-    // honest against the Rust side whenever it changes.
+    // macOS captures system audio with a CoreAudio process tap
+    // (src-tauri/src/speaker/macos.rs), which needs macOS 14.2 and no Screen
+    // Recording grant. This mirrors the available path, because that is the
+    // state the layout probe needs to exercise. The unavailable path is a
+    // rejection from get_output_devices, not an empty list: resolving empty is
+    // what let a fabricated waveform pass as a working pipeline before, so keep
+    // these two honest against the Rust side whenever it changes.
     check_system_audio_access: () => true,
     request_system_audio_access: () => true,
     start_system_audio_capture: () => null,
@@ -141,11 +141,16 @@
     // not an object.
     get_capture_status: () => false,
     get_audio_sample_rate: () => 48000,
-    // One entry, matching src-tauri/src/speaker/macos.rs: ScreenCaptureKit taps
-    // the whole output mix and has no per-device selection, so a longer list
-    // would be a dropdown whose entries all did the same thing.
+    // One entry, matching src-tauri/src/speaker/macos.rs: the tap is global over
+    // the output mix and has no per-device selection, so a longer list would be
+    // a dropdown whose entries all did the same thing. The real name carries the
+    // tap's sample rate, which is the device's own.
     get_output_devices: () => [
-      { id: "system-mix", name: "System audio (all output)", is_default: true },
+      {
+        id: "system-mix",
+        name: "System audio (all output, 48 kHz)",
+        is_default: true,
+      },
     ],
 
     provider_request: providerRequest,
