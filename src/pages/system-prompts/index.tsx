@@ -1,5 +1,6 @@
 import {
   Input,
+  Badge,
   Card,
   CardDescription,
   CardHeader,
@@ -12,6 +13,7 @@ import {
   Empty,
 } from "@/components";
 import { useSystemPrompts } from "@/hooks";
+import { isBuiltinSystemPrompt } from "@/lib";
 import {
   Search,
   MoreHorizontal,
@@ -201,9 +203,12 @@ const SystemPrompts = () => {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 2xl:grid-cols-4 pb-4">
           {filteredPrompts.reverse().map((prompt) => {
             const isSelected = selectedPromptId === prompt.id;
+            const isBuiltin = isBuiltinSystemPrompt(prompt.id);
             return (
               <Card
                 key={prompt.id}
+                data-slot="system-prompt-card"
+                data-builtin={isBuiltin ? "true" : "false"}
                 className={`relative border  lg:border-2 shadow-none p-4 pb-10 gap-0 group cursor-pointer transition-all hover:shadow-sm ${
                   isSelected
                     ? "!bg-primary/5 dark:!bg-primary/10 border-primary"
@@ -229,42 +234,53 @@ const SystemPrompts = () => {
                   </div>
                 </CardHeader>
                 <div className="absolute bottom-2 left-4 w-full flex items-center justify-between">
-                  <span className="text-[10px] lg:text-xs text-muted-foreground select-none">
-                    {prompt.created_at}
-                  </span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild className="mr-6">
-                      <button
-                        className="flex size-8 items-center justify-center rounded-xl transition-opacity hover:bg-accent"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                        }}
-                      >
-                        <MoreHorizontal className="size-4 text-muted-foreground" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditClick(prompt.id);
-                        }}
-                      >
-                        <Pencil className="size-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteClick(prompt.id);
-                        }}
-                      >
-                        <Trash2 className="size-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {isBuiltin ? (
+                    // A built-in has no meaningful created_at and cannot be
+                    // edited or deleted, so the row says what it is instead of
+                    // showing an epoch date beside a menu that does nothing.
+                    <Badge variant="secondary" className="select-none">
+                      Built-in
+                    </Badge>
+                  ) : (
+                    <span className="text-[10px] lg:text-xs text-muted-foreground select-none">
+                      {prompt.created_at}
+                    </span>
+                  )}
+                  {!isBuiltin && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild className="mr-6">
+                        <button
+                          className="flex size-8 items-center justify-center rounded-xl transition-opacity hover:bg-accent"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        >
+                          <MoreHorizontal className="size-4 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditClick(prompt.id);
+                          }}
+                        >
+                          <Pencil className="size-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(prompt.id);
+                          }}
+                        >
+                          <Trash2 className="size-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </Card>
             );

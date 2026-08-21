@@ -11,12 +11,20 @@ import type {
   UpdateSystemPromptInput,
 } from "@/types";
 import { DEFAULT_SYSTEM_PROMPT, STORAGE_KEYS } from "@/config";
-import { safeLocalStorage } from "@/lib";
+import {
+  BUILTIN_SYSTEM_PROMPTS,
+  isBuiltinSystemPrompt,
+  safeLocalStorage,
+} from "@/lib";
 import { useApp } from "@/contexts";
 
 export const useSystemPrompts = () => {
   const { setSystemPrompt } = useApp();
-  const [prompts, setPrompts] = useState<SystemPrompt[]>([]);
+  // Seeded rather than empty so a database that fails to open still leaves the
+  // built-in profiles selectable.
+  const [prompts, setPrompts] = useState<SystemPrompt[]>(
+    BUILTIN_SYSTEM_PROMPTS
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<number | null>(
@@ -36,7 +44,7 @@ export const useSystemPrompts = () => {
       setIsLoading(true);
       setError(null);
       const result = await getAllSystemPrompts();
-      setPrompts(result);
+      setPrompts([...BUILTIN_SYSTEM_PROMPTS, ...result]);
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to fetch system prompts";
@@ -78,6 +86,9 @@ export const useSystemPrompts = () => {
     ): Promise<SystemPrompt> => {
       try {
         setError(null);
+        if (isBuiltinSystemPrompt(id)) {
+          throw new Error("Built-in profiles cannot be edited");
+        }
         const result = await updateSystemPrompt(id, input);
         await fetchPrompts(); // Refresh list
         return result;
@@ -99,6 +110,9 @@ export const useSystemPrompts = () => {
     async (id: number): Promise<void> => {
       try {
         setError(null);
+        if (isBuiltinSystemPrompt(id)) {
+          throw new Error("Built-in profiles cannot be deleted");
+        }
         await deleteSystemPrompt(id);
         await fetchPrompts(); // Refresh list
       } catch (err) {

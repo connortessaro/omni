@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useWindowResize } from "./useWindow";
 import { useGlobalShortcuts } from "@/hooks";
-import { MAX_FILES } from "@/config";
+import { MAX_FILES, STORAGE_KEYS } from "@/config";
 import { useApp } from "@/contexts";
 import {
   fetchAIResponse,
@@ -26,6 +26,8 @@ import {
   budgetOverflowNotice,
   runAgentLoopAsText,
   TOOLS,
+  CODE_PROFILE_ID,
+  safeLocalStorage,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -97,6 +99,7 @@ export const useCompletion = () => {
   const [messageHistoryOpen, setMessageHistoryOpen] = useState(false);
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
   const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
+  const [showCaptureHint, setShowCaptureHint] = useState(false);
   const [keepEngaged, setKeepEngaged] = useState(false);
   const [promptHistory, setPromptHistory] = useState<string[]>(() => {
     try {
@@ -258,6 +261,20 @@ export const useCompletion = () => {
       // cost the HUD the thing that makes it worth using.
       const useTools = matches("/solve");
 
+      // These four rewrite the turn into a request for code, so a prose sentence
+      // cap on the answer is a request to truncate a diff. /fix, /explain,
+      // /summarize and /translate are prose commands and are deliberately absent.
+      // Selecting the Code profile says the same thing about every turn.
+      const codeProfileActive =
+        safeLocalStorage.getItem(STORAGE_KEYS.SELECTED_SYSTEM_PROMPT_ID) ===
+        String(CODE_PROFILE_ID);
+      const codeIntent =
+        codeProfileActive ||
+        matches("/code") ||
+        matches("/refactor") ||
+        matches("/commit") ||
+        matches("/regex");
+
       let input = trimmedInput;
       if (useTools) {
         input =
@@ -401,6 +418,7 @@ export const useCompletion = () => {
               history: messageHistory,
               userMessage,
               imagesBase64,
+              codeIntent,
               signal,
               toolNames: Object.keys(TOOLS),
             })
@@ -411,6 +429,7 @@ export const useCompletion = () => {
               history: messageHistory,
               userMessage,
               imagesBase64,
+              codeIntent,
               signal,
             });
 
@@ -1142,10 +1161,25 @@ export const useCompletion = () => {
     return () => window.removeEventListener("keydown", handleToggleShortcut);
   }, [isPopoverOpen]);
 
-  const captureScreenshot = useCallback(async () => {
+  const captureScreenshot = useCallback(async (forceRegion = false) => {
     if (!handleScreenshotSubmit) return;
 
     const config = screenshotConfigRef.current;
+    // The region shortcut reaches the accurate path without a trip to Settings,
+    // so it overrides the saved mode instead of reading it.
+    const useFullScreen = config.enabled && !forceRegion;
+
+    // Told once, then never again, and before the permission check rather than
+    // after it: a capture is not the moment for a lecture, but silently reading
+    // 60% of the screen and stopping is worse.
+    if (
+      useFullScreen &&
+      safeLocalStorage.getItem(STORAGE_KEYS.FULL_SCREEN_CAPTURE_HINT) !== "seen"
+    ) {
+      safeLocalStorage.setItem(STORAGE_KEYS.FULL_SCREEN_CAPTURE_HINT, "seen");
+      setShowCaptureHint(true);
+    }
+
     screenshotInitiatedByThisContext.current = true;
     setIsScreenshotLoading(true);
 
@@ -1183,7 +1217,7 @@ export const useCompletion = () => {
         hasCheckedPermissionRef.current = true;
       }
 
-      if (config.enabled) {
+      if (useFullScreen) {
         const base64 = await invoke("capture_to_base64");
 
         if (config.mode === "auto") {
@@ -1207,7 +1241,7 @@ export const useCompletion = () => {
       isProcessingScreenshotRef.current = false;
       screenshotInitiatedByThisContext.current = false;
     } finally {
-      if (config.enabled) {
+      if (useFullScreen) {
         setIsScreenshotLoading(false);
       }
     }
@@ -1291,11 +1325,18 @@ export const useCompletion = () => {
   useEffect(() => {
     globalShortcuts.registerAudioCallback(toggleRecording);
     globalShortcuts.registerInputRef(inputRef.current);
-    globalShortcuts.registerScreenshotCallback(captureScreenshot);
+    // Wrapped rather than passed by reference: the shortcut layer calls its
+    // callback with no arguments, and captureScreenshot's first argument is
+    // forceRegion, so passing it bare would make both shortcuts identical.
+    globalShortcuts.registerScreenshotCallback(() => captureScreenshot());
+    globalShortcuts.registerScreenshotRegionCallback(() =>
+      captureScreenshot(true)
+    );
   }, [
     globalShortcuts.registerAudioCallback,
     globalShortcuts.registerInputRef,
     globalShortcuts.registerScreenshotCallback,
+    globalShortcuts.registerScreenshotRegionCallback,
     toggleRecording,
     captureScreenshot,
     inputRef,
@@ -1346,6 +1387,8 @@ export const useCompletion = () => {
     inputRef,
     captureScreenshot,
     isScreenshotLoading,
+    showCaptureHint,
+    setShowCaptureHint,
     keepEngaged,
     setKeepEngaged,
   };

@@ -155,7 +155,10 @@ const run = async () => {
   // The HUD probes Ollama on localhost:11434 to offer local models. When nothing
   // is listening the component handles it, but the browser still logs a failed
   // resource load, so that one endpoint is not treated as a defect.
-  const OPTIONAL_ENDPOINTS = ["11434"];
+  // 1422 is provider-proxy.mjs, which serves the capture fixture. tauri-mock
+  // falls back to an empty string when it is not running, which is this probe's
+  // case, so a failed load there is expected rather than a defect.
+  const OPTIONAL_ENDPOINTS = ["11434", "1422"];
   // Named so the later single-purpose pages report faults into the same list.
   const watchForErrors = (target, label = "") => {
     const tag = label ? ` (${label})` : "";
@@ -189,6 +192,36 @@ const run = async () => {
     "placeholder fits without wrapping",
     resting.promptScrollHeight <= resting.promptClientHeight,
     `empty box scrollHeight=${resting.promptScrollHeight} clientHeight=${resting.promptClientHeight}`
+  );
+
+  // 1c. a fresh profile defaults to region capture, not the whole screen.
+  //
+  // A full-screen capture at 2560x1600 is transcribed to about 60% and then
+  // stops, silently. Region capture is measured at 0-1.7% character error. The
+  // default that decides which one a new user gets used to be set by a one-time
+  // migration that never persisted, so the whole-screen path won on relaunch.
+  const captureDefault = await page.evaluate(() => {
+    const raw = localStorage.getItem("screenshot_config");
+    const button = document.querySelector('[data-slot="hud-screenshot"]');
+    return {
+      raw,
+      legacySentinel: localStorage.getItem("auto-configs-enabled"),
+      // useTitles moves `title` to `data-original-title` so the OS tooltip never
+      // draws over a stealth overlay, so match either. session.mjs does the same.
+      title:
+        button?.getAttribute("data-original-title") ??
+        button?.getAttribute("title") ??
+        null,
+    };
+  });
+  record(
+    "a fresh profile defaults to region capture",
+    captureDefault.title !== null &&
+      captureDefault.title.startsWith("Selection mode") &&
+      captureDefault.legacySentinel === null,
+    `title=${JSON.stringify(captureDefault.title)} ` +
+      `screenshot_config=${captureDefault.raw ?? "(unset)"} ` +
+      `auto-configs-enabled=${captureDefault.legacySentinel ?? "(absent)"}`
   );
 
   // 2. growth on a wrapped second line
@@ -600,6 +633,128 @@ const run = async () => {
     "Escape dismisses the clipboard peek",
     barBeforeEscape === 1 && barAfterEscape === 0,
     `peek bar ${barBeforeEscape} -> ${barAfterEscape} after Escape`
+  );
+
+  // 10. the whole-screen path warns once, on its own page.
+  //
+  // Someone who deliberately chose Screenshot Mode keeps it, so the only honest
+  // mitigation is telling them what it costs: a native-resolution capture is
+  // transcribed to about 60% and then stops without saying so. On a page of its
+  // own because it seeds a saved config the earlier assertions must not see.
+  const hintPage = await context.newPage();
+  watchForErrors(hintPage, "capture-hint");
+  await hintPage.setViewportSize({ width: HUD_WIDTH, height: 320 });
+  await hintPage.addInitScript(() => {
+    try {
+      localStorage.setItem(
+        "screenshot_config",
+        JSON.stringify({
+          mode: "manual",
+          autoPrompt: "Analyze this screenshot and provide insights",
+          enabled: true,
+        })
+      );
+    } catch {
+      // Storage disabled just means this assertion is the loss.
+    }
+  });
+  await hintPage.goto(APP_URL, { waitUntil: "domcontentloaded" });
+  const hintPrompt = hintPage.getByPlaceholder(PROMPT_PLACEHOLDER);
+  await hintPrompt.waitFor({ state: "visible", timeout: 15000 });
+  await hintPage.locator('[data-slot="hud-screenshot"]').click();
+  await hintPage.waitForTimeout(800);
+
+  const hint = await hintPage.evaluate(() => {
+    const node = document.querySelector('[data-slot="capture-hint"]');
+    const bar = node?.closest("[data-hud-overlay]");
+    // Every transient bar is positioned at top-full, so two of them showing at
+    // once stack one behind the other. The first version of this shipped with
+    // the clipboard peek drawn straight over the tip, and the geometry
+    // assertions above all still passed, so occlusion is checked directly:
+    // whatever sits at the middle of the tip must be the tip.
+    let occludedBy = null;
+    if (node) {
+      const box = node.getBoundingClientRect();
+      const onTop = document.elementFromPoint(
+        box.left + box.width / 2,
+        box.top + box.height / 2
+      );
+      if (onTop && !node.contains(onTop) && onTop !== node) {
+        occludedBy =
+          onTop.getAttribute("data-slot") ?? onTop.tagName.toLowerCase();
+      }
+    }
+    return {
+      present: Boolean(node),
+      text: node?.textContent?.trim() ?? null,
+      insideOverlay: Boolean(bar),
+      overflows: bar ? bar.scrollWidth > bar.clientWidth + 0.5 : null,
+      occludedBy,
+      // `truncate` on this span cut the sentence at "lose detail...", which drops
+      // the half that tells the user what to do instead.
+      textClipped: node ? node.scrollWidth > node.clientWidth + 0.5 : null,
+      flag: localStorage.getItem("full_screen_capture_hint"),
+    };
+  });
+  await hintPage.screenshot({ path: join(OUT, "8-capture-hint.png") });
+  record(
+    "a whole-screen capture warns once, unobscured, and the bar fits",
+    hint.present &&
+      hint.insideOverlay &&
+      hint.overflows === false &&
+      hint.occludedBy === null &&
+      hint.textClipped === false &&
+      hint.flag === "seen" &&
+      /region/i.test(hint.text ?? ""),
+    `present=${hint.present} inOverlay=${hint.insideOverlay} ` +
+      `overflows=${hint.overflows} occludedBy=${hint.occludedBy ?? "nothing"} ` +
+      `textClipped=${hint.textClipped} flag=${hint.flag ?? "(unset)"} ` +
+      `text=${JSON.stringify(hint.text)}`
+  );
+
+  // 11. a long code line scrolls; it does not wrap into a fake newline.
+  //
+  // `white-space: pre-wrap` on the pre meant the overflow-x: auto above it never
+  // engaged, so a wrapped continuation row began at the gutter's left edge with
+  // no hanging indent. In a 600px HUD that is most real lines, and the reader
+  // cannot tell a wrap from a newline in code they are about to copy. Tables
+  // already scrolled, because nothing overrides their white-space.
+  //
+  // Measured against a code block built in the live document rather than a real
+  // answer: the response panel needs a provider and a network call, and what
+  // broke here was the shipped stylesheet at the shipped width in WebKit.
+  const codeWrap = await page.evaluate(() => {
+    const host = document.createElement("div");
+    host.setAttribute("data-streamdown", "code-block");
+    const pre = document.createElement("pre");
+    pre.setAttribute("data-streamdown", "code-block-body");
+    pre.className = "p-4 text-sm";
+    const code = document.createElement("code");
+    code.textContent =
+      "const x = someFunction(argumentOne, argumentTwo, argumentThree, argumentFour, argumentFive);";
+    pre.appendChild(code);
+    host.appendChild(pre);
+    document.body.appendChild(host);
+    const style = getComputedStyle(pre);
+    const measured = {
+      whiteSpace: style.whiteSpace,
+      overflowX: style.overflowX,
+      scrolls: pre.scrollWidth > pre.clientWidth + 0.5,
+      scrollWidth: pre.scrollWidth,
+      clientWidth: pre.clientWidth,
+      lineBoxes: code.getClientRects().length,
+    };
+    host.remove();
+    return measured;
+  });
+  record(
+    "a long code line scrolls instead of wrapping",
+    codeWrap.whiteSpace === "pre" &&
+      codeWrap.scrolls &&
+      codeWrap.lineBoxes === 1,
+    `white-space=${codeWrap.whiteSpace} overflow-x=${codeWrap.overflowX} ` +
+      `scrollWidth=${codeWrap.scrollWidth} clientWidth=${codeWrap.clientWidth} ` +
+      `lineBoxes=${codeWrap.lineBoxes} (want 1)`
   );
 
   record(

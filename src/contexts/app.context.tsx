@@ -122,9 +122,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const [screenshotConfiguration, setScreenshotConfiguration] =
     useState<ScreenshotConfig>({
+      // Region capture, not the whole screen. A full-screen grab at native
+      // resolution is transcribed to roughly 60% and then stops with no error;
+      // a dragged region measures 0-1.7% character error. `mode` is only read on
+      // the `enabled: true` branch, so it is inert here.
       mode: "manual",
       autoPrompt: "Analyze this screenshot and provide insights",
-      enabled: true,
+      enabled: false,
     });
 
   // Unified Customizable State
@@ -140,19 +144,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const setSupportsImages = (value: boolean) => {
     setSupportsImagesState(value);
     safeLocalStorage.setItem(STORAGE_KEYS.SUPPORTS_IMAGES, String(value));
-  };
-
-  const applyOneTimeScreenshotDefaults = () => {
-    const autoConfigsEnabled = localStorage.getItem("auto-configs-enabled");
-    if (!autoConfigsEnabled) {
-      setScreenshotConfiguration({
-        mode: "auto",
-        autoPrompt: "Analyze the screenshot and provide insights",
-        enabled: false,
-      });
-      // Set the flag to true so that we don't change the mode again
-      localStorage.setItem("auto-configs-enabled", "true");
-    }
   };
 
   useEffect(() => {
@@ -303,7 +294,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // Load data
     loadData();
-    applyOneTimeScreenshotDefaults();
   }, []);
 
   // Handle customizable settings on state changes

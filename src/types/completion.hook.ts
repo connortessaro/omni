@@ -137,9 +137,11 @@ export interface UseCompletionReturn {
   /** Ref for the input element */
   inputRef: RefObject<HTMLTextAreaElement | null>;
   /** Function to capture a screenshot */
-  captureScreenshot: () => Promise<void>;
+  captureScreenshot: (forceRegion?: boolean) => Promise<void>;
   /** Whether a screenshot is currently loading */
   isScreenshotLoading: boolean;
+  showCaptureHint: boolean;
+  setShowCaptureHint: Dispatch<SetStateAction<boolean>>;
 }
 
 /**
