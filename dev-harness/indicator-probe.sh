@@ -41,10 +41,23 @@ print -r -- "baseline: $baseline"
 
 # The repo's own ignored integration test is the capture source, so this probes
 # the shipped code path rather than a bespoke harness binary.
+#
+# Its output is kept rather than discarded, because this probe is otherwise
+# trivially green: an unchanged menu bar proves nothing if no tap was ever
+# opened. A missing Screen Recording grant, no output device, a renamed test or
+# a compile error would all have read as PASS.
+#
+# Exit status is the wrong signal for that. The test also asserts the captured
+# audio is not silent, so it exits non-zero on a quiet machine even though the
+# tap opened and ran, and playback is deliberately not required here: an idle tap
+# lights the indicator if it is going to. So the gate is the test's own
+# "captured N samples" line, which only prints once a tap is live.
+capture_log=$(mktemp -t omni-indicator-probe)
+trap 'rm -f "$capture_log"' EXIT
 (
   for i in {1..8}; do
     cargo test --manifest-path "$REPO/src-tauri/Cargo.toml" \
-      -- --ignored captures_the_live_system_mix >/dev/null 2>&1
+      -- --ignored --nocapture captures_the_live_system_mix >>"$capture_log" 2>&1
   done
 ) &
 capture_pid=$!
@@ -64,6 +77,15 @@ for i in $(seq 1 $SAMPLES); do
 done
 
 wait $capture_pid 2>/dev/null
+
+# Anti-vacuity: refuse to report on a capture that never happened.
+captured=$(grep -cE "captured [1-9][0-9]* samples" "$capture_log" 2>/dev/null || true)
+if (( captured == 0 )); then
+  print -r -- "capture log tail:"
+  tail -20 "$capture_log" | sed 's/^/  /'
+  fail "no tap ever opened, so the menu bar told us nothing. Expected at least one \"captured N samples\" line."
+fi
+print -r -- "capture: $captured tap run(s) opened and delivered samples"
 
 after=$(items)
 if [[ "$after" != "$baseline" ]]; then
