@@ -20,6 +20,11 @@ jobs:
           node-version: 20
           cache: "npm"
 
+      # Reports without gating, on purpose: the current findings all need
+      # semver-major bumps (vite, and the @ricky0123/vad-* chain that carries
+      # onnxruntime-web), so removing `|| true` today would fail every PR on
+      # advisories nobody can fix in that PR. Drop the `|| true` once those are
+      # upgraded, so this actually blocks.
       - name: NPM Security Audit
         run: npm audit --audit-level=high || true
 
@@ -27,4 +32,10 @@ jobs:
         uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          manifest-path: src-tauri/Cargo.toml
+          # Not `manifest-path`: this action takes no such input, so it was
+          # discarded and cargo-audit fell back to ./Cargo.lock, which does not
+          # exist here. The lockfile is in src-tauri, so point the working
+          # directory at it. Every run of this job since it was added had failed
+          # with "Couldn't load ./Cargo.lock", which meant Rust advisories were
+          # never actually checked, including on the Dependabot Cargo PRs.
+          working-directory: src-tauri
