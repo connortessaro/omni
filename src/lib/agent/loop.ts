@@ -33,6 +33,7 @@ type FetchAIResponse = (params: {
   history?: Message[];
   userMessage: string;
   imagesBase64?: string[];
+  codeIntent?: boolean;
   signal?: AbortSignal;
 }) => AsyncIterable<string>;
 
@@ -44,6 +45,7 @@ export interface AgentLoopParams {
   history?: Message[];
   userMessage: string;
   imagesBase64?: string[];
+  codeIntent?: boolean;
   signal?: AbortSignal;
   toolNames: string[];
   /** Upper bound on model round trips, including the final answer. */
@@ -98,6 +100,7 @@ export async function* runAgentLoop(
     history = [],
     userMessage,
     imagesBase64 = [],
+    codeIntent = false,
     signal,
     toolNames,
     maxIterations = DEFAULT_MAX_ITERATIONS,
@@ -132,6 +135,7 @@ export async function* runAgentLoop(
         history: conversation,
         userMessage: currentMessage,
         imagesBase64: currentImages,
+        codeIntent,
         signal: passController.signal,
       })) {
         buffer += delta;

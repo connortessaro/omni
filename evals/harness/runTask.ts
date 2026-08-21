@@ -33,6 +33,7 @@ export interface FetchAIResponseParams {
   history?: Message[];
   userMessage: string;
   imagesBase64?: string[];
+  codeIntent?: boolean;
   signal?: AbortSignal;
 }
 

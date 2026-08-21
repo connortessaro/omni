@@ -258,6 +258,15 @@ export const useCompletion = () => {
       // cost the HUD the thing that makes it worth using.
       const useTools = matches("/solve");
 
+      // These four rewrite the turn into a request for code, so a prose sentence
+      // cap on the answer is a request to truncate a diff. /fix, /explain,
+      // /summarize and /translate are prose commands and are deliberately absent.
+      const codeIntent =
+        matches("/code") ||
+        matches("/refactor") ||
+        matches("/commit") ||
+        matches("/regex");
+
       let input = trimmedInput;
       if (useTools) {
         input =
@@ -401,6 +410,7 @@ export const useCompletion = () => {
               history: messageHistory,
               userMessage,
               imagesBase64,
+              codeIntent,
               signal,
               toolNames: Object.keys(TOOLS),
             })
@@ -411,6 +421,7 @@ export const useCompletion = () => {
               history: messageHistory,
               userMessage,
               imagesBase64,
+              codeIntent,
               signal,
             });
 

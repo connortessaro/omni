@@ -41,7 +41,8 @@ export const IMAGE_GROUNDING_INSTRUCTIONS =
 
 function buildEnhancedSystemPrompt(
   baseSystemPrompt?: string,
-  hasImages = false
+  hasImages = false,
+  codeIntent = false
 ): string {
   const responseSettings = getResponseSettings();
   const prompts: string[] = [];
@@ -54,11 +55,17 @@ function buildEnhancedSystemPrompt(
     prompts.push(IMAGE_GROUNDING_INSTRUCTIONS);
   }
 
-  const lengthOption = RESPONSE_LENGTHS.find(
-    (l) => l.id === responseSettings.responseLength
-  );
-  if (lengthOption?.prompt?.trim()) {
-    prompts.push(lengthOption.prompt);
+  // A length setting is a preference about prose. On a turn the user explicitly
+  // marked as code — a /code, /refactor, /commit or /regex command, or the Code
+  // profile being active — appending any sentence cap is a request to truncate a
+  // diff, so the option is skipped rather than softened.
+  if (!codeIntent) {
+    const lengthOption = RESPONSE_LENGTHS.find(
+      (l) => l.id === responseSettings.responseLength
+    );
+    if (lengthOption?.prompt?.trim()) {
+      prompts.push(lengthOption.prompt);
+    }
   }
 
   const languageOption = LANGUAGES.find(
@@ -84,6 +91,7 @@ export async function* fetchAIResponse(params: {
   history?: Message[];
   userMessage: string;
   imagesBase64?: string[];
+  codeIntent?: boolean;
   signal?: AbortSignal;
 }): AsyncIterable<string> {
   try {
@@ -94,6 +102,7 @@ export async function* fetchAIResponse(params: {
       history = [],
       userMessage,
       imagesBase64 = [],
+      codeIntent = false,
       signal,
     } = params;
 
@@ -104,7 +113,8 @@ export async function* fetchAIResponse(params: {
 
     const enhancedSystemPrompt = buildEnhancedSystemPrompt(
       systemPrompt,
-      imagesBase64.length > 0
+      imagesBase64.length > 0,
+      codeIntent
     );
 
     if (!provider) {
