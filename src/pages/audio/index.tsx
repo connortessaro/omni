@@ -1,6 +1,8 @@
 import { AudioSelection } from "./components";
+import { STTProviders } from "@/pages/dev/components";
 import { PageLayout } from "@/layouts";
 import { getPlatform } from "@/lib";
+import { useSettings } from "@/hooks";
 
 const getOsInstructions = () => {
   const platform = getPlatform();
@@ -31,6 +33,7 @@ const getOsInstructions = () => {
 
 const Audio = () => {
   const osInstructions = getOsInstructions();
+  const settings = useSettings();
 
   return (
     <PageLayout
@@ -54,6 +57,10 @@ const Audio = () => {
           devices.
         </p>
       </div>
+
+      {/* Voice input needs an STT provider; surface the picker here since
+          this is the page users land on when the microphone won't work. */}
+      <STTProviders {...settings} />
     </PageLayout>
   );
 };

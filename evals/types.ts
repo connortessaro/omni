@@ -67,6 +67,14 @@ export interface Task {
   prompt: string;
   history?: Message[];
   systemPrompt?: string;
+  /**
+   * Image fixtures to send with the prompt, as repo-root-relative paths. The runner
+   * reads and base64-encodes them, so a task stays a plain data literal.
+   *
+   * `fetchAIResponse` has always accepted `imagesBase64`, but nothing passed it, so
+   * the vision path shipped untested. These make it exercised.
+   */
+  imageFixtures?: string[];
   grader: Grader;
   knownWeakness?: string;
 }

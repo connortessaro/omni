@@ -8,19 +8,32 @@ import { StopCircle, Send } from "lucide-react";
 interface AudioRecorderProps {
   onTranscriptionComplete: (text: string) => void;
   onCancel: () => void;
+  // Optional: lets a parent surface the failure reason somewhere persistent
+  // (e.g. a banner) instead of the message only living inside this component.
+  onError?: (message: string) => void;
 }
 
 const MAX_DURATION = 3 * 60 * 1000;
 
+// Probed in preference order. WKWebView's MediaRecorder only produces
+// audio/mp4, not webm or ogg, so checking webm first (as Chromium-first code
+// tends to) always falls through to ogg there and throws NotSupportedError.
+const MIME_TYPE_CANDIDATES = ["audio/mp4", "audio/webm", "audio/ogg"] as const;
+
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
 export const AudioRecorder = ({
   onTranscriptionComplete,
   onCancel,
+  onError,
 }: AudioRecorderProps) => {
   const { selectedSttProvider, allSttProviders, selectedAudioDevices } =
     useApp();
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -82,12 +95,16 @@ export const AudioRecorder = ({
 
   const startRecording = async () => {
     try {
+      setError(null);
+
+      // selectedAudioDevices.input.id is a MediaDevices deviceId (see
+      // types/context.type.ts). Pass it bare, not wrapped in `{ exact }`: a
+      // stale id then makes the browser degrade to the default device
+      // instead of throwing OverconstrainedError.
       const deviceId = selectedAudioDevices?.input?.id;
 
       const audioConstraints: MediaTrackConstraints =
-        deviceId && deviceId !== "default"
-          ? { deviceId: { exact: deviceId } }
-          : {};
+        deviceId && deviceId !== "default" ? { deviceId } : {};
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: audioConstraints,
@@ -97,9 +114,15 @@ export const AudioRecorder = ({
       streamRef.current = stream;
       setAudioStream(stream);
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "audio/ogg";
+      const mimeType = MIME_TYPE_CANDIDATES.find((type) =>
+        MediaRecorder.isTypeSupported(type)
+      );
+
+      if (!mimeType) {
+        throw new Error(
+          "This browser cannot record audio in a supported format."
+        );
+      }
 
       const recorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = recorder;
@@ -123,10 +146,14 @@ export const AudioRecorder = ({
           handleSend();
         }
       }, MAX_DURATION);
-    } catch (error) {
-      console.error("Failed to start recording:", error);
+    } catch (err) {
+      const message = getErrorMessage(err);
+      console.error("Failed to start recording:", err);
       cleanup();
-      onCancel();
+      // Surface the reason instead of cancelling silently. The user can
+      // dismiss with the Stop button once they've read it.
+      setError(message);
+      onError?.(message);
     }
   };
 
@@ -160,9 +187,19 @@ export const AudioRecorder = ({
       });
 
       onTranscriptionComplete(text);
-    } catch (error) {
-      console.error("Transcription failed:", error);
-      onCancel();
+    } catch (err) {
+      const message = getErrorMessage(err);
+      console.error("Transcription failed:", err);
+      setIsTranscribing(false);
+      setError(message);
+
+      // Only close automatically when the parent can actually show the
+      // reason somewhere else; otherwise stay open with the inline message
+      // above so the failure isn't silent.
+      if (onError) {
+        onError(message);
+        onCancel();
+      }
     }
   };
 
@@ -176,7 +213,11 @@ export const AudioRecorder = ({
   return (
     <div className="border bg-background rounded-lg overflow-hidden">
       <div className="h-12 relative bg-muted/20">
-        {audioStream ? (
+        {error ? (
+          <div className="h-full flex items-center justify-center px-3 text-center text-xs text-red-500">
+            {error}
+          </div>
+        ) : audioStream ? (
           <div className="h-full w-full pt-3">
             <AudioVisualizer stream={audioStream} isRecording={true} />
           </div>
@@ -208,7 +249,7 @@ export const AudioRecorder = ({
           <Button
             size="icon"
             onClick={handleSend}
-            disabled={isTranscribing}
+            disabled={isTranscribing || !!error}
             className="h-8 w-8"
             title={isTranscribing ? "Sending..." : "Send to AI"}
           >

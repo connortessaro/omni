@@ -2,7 +2,7 @@ import { fetchSTT } from "@/lib";
 import { UseCompletionReturn } from "@/types";
 import { useMicVAD } from "@ricky0123/vad-react";
 import { LoaderCircleIcon, MicIcon, MicOffIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components";
 import { useApp } from "@/contexts";
 import { floatArrayToWav } from "@/lib/utils";
@@ -22,15 +22,19 @@ const AutoSpeechVADInternal = ({
 }: AutoSpeechVADProps) => {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const { selectedSttProvider, allSttProviders } = useApp();
+  const micStartAttemptedRef = useRef(false);
 
   const audioConstraints: MediaTrackConstraints =
     microphoneDeviceId && microphoneDeviceId !== "default"
-      ? { deviceId: { exact: microphoneDeviceId } }
+      ? { deviceId: microphoneDeviceId }
       : {};
 
   const vad = useMicVAD({
     userSpeakingThreshold: 0.6,
-    startOnLoad: true,
+    startOnLoad: false,
+    baseAssetPath: "/vad/",
+    onnxWASMBasePath: "/vad/",
+    model: "legacy",
     additionalAudioConstraints: audioConstraints,
     onSpeechEnd: async (audio) => {
       try {
@@ -89,22 +93,72 @@ const AutoSpeechVADInternal = ({
     },
   });
 
+  // Surface a broken VAD the same way a missing STT provider is surfaced
+  // above, so a dead mic shows an error instead of just sitting idle.
+  useEffect(() => {
+    if (!vad.errored) return;
+    const message = vad.errored;
+    console.error("Voice activity detection failed:", message);
+    setState((prev: any) => ({
+      ...prev,
+      error: message,
+    }));
+  }, [vad.errored, setState]);
+
+  // macOS gates microphone access behind TCC, which getUserMedia does not
+  // reliably prompt for by itself inside a WKWebView -- the same reason
+  // screen recording is checked explicitly elsewhere. Confirm (and request)
+  // access before ever calling vad.start(), so a missing permission surfaces
+  // as an error instead of a mic that silently listens to nothing.
+  useEffect(() => {
+    if (vad.loading || vad.errored || micStartAttemptedRef.current) return;
+    micStartAttemptedRef.current = true;
+
+    const startIfPermitted = async () => {
+      if (navigator.platform.toLowerCase().includes("mac")) {
+        const { checkMicrophonePermission, requestMicrophonePermission } =
+          await import("tauri-plugin-macos-permissions-api");
+
+        const hasPermission = await checkMicrophonePermission();
+        if (!hasPermission) {
+          await requestMicrophonePermission();
+          setState((prev: any) => ({
+            ...prev,
+            error:
+              "Microphone permission required. Please enable it in System Settings > Privacy & Security > Microphone, then click the mic button again.",
+          }));
+          return;
+        }
+      }
+
+      vad.start();
+      setEnableVAD(true);
+    };
+
+    startIfPermitted();
+  }, [vad.loading, vad.errored]);
+
   return (
     <>
       <Button
         size="icon"
+        disabled={!!vad.errored}
         onClick={() => {
           if (vad.listening) {
             vad.pause();
             setEnableVAD(false);
-          } else {
+          } else if (!vad.loading && !vad.errored) {
             vad.start();
             setEnableVAD(true);
           }
         }}
         className="cursor-pointer"
       >
-        {isTranscribing ? (
+        {vad.errored ? (
+          <MicOffIcon className="h-4 w-4 text-red-500" />
+        ) : vad.loading ? (
+          <LoaderCircleIcon className="h-4 w-4 animate-spin text-muted-foreground" />
+        ) : isTranscribing ? (
           <LoaderCircleIcon className="h-4 w-4 animate-spin text-green-500" />
         ) : vad.userSpeaking ? (
           <LoaderCircleIcon className="h-4 w-4 animate-spin" />

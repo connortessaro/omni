@@ -12,6 +12,9 @@ export const STORAGE_KEYS = {
   SELECTED_STT_PROVIDER: "curl_selected_stt_provider",
   SYSTEM_AUDIO_CONTEXT: "system_audio_context",
   SYSTEM_AUDIO_QUICK_ACTIONS: "system_audio_quick_actions",
+  // Deliberately the same string useSystemAudio wrote before this key existed,
+  // so a saved VAD config survives the move off the raw literal.
+  VAD_CONFIG: "vad_config",
   CUSTOMIZABLE: "customizable",
   SHORTCUTS: "shortcuts",
   AUTOSTART_INITIALIZED: "autostart_initialized",

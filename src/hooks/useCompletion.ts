@@ -23,11 +23,16 @@ import {
   PASTE_AS_BLOCK_THRESHOLD,
   fitHistoryToBudget,
   historyBudgetNotice,
+  budgetOverflowNotice,
   runAgentLoopAsText,
   TOOLS,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+
+/** Unique per attachment: Date.now() alone collides within a millisecond. */
+const newAttachmentId = (): string =>
+  `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 // Types for completion
 interface AttachedFile {
@@ -112,6 +117,9 @@ export const useCompletion = () => {
   const screenshotConfigRef = useRef(screenshotConfiguration);
   const hasCheckedPermissionRef = useRef(false);
   const screenshotInitiatedByThisContext = useRef(false);
+  // Which attachments are already in the database for this conversation, so images
+  // that stay attached across turns are not written once per message.
+  const persistedFileIdsRef = useRef<Set<string>>(new Set());
 
   const { resizeWindow } = useWindowResize();
 
@@ -141,7 +149,7 @@ export const useCompletion = () => {
     try {
       const base64 = await fileToBase64(file);
       const attachedFile: AttachedFile = {
-        id: Date.now().toString(),
+        id: newAttachmentId(),
         name: file.name,
         type: file.type,
         base64,
@@ -222,6 +230,7 @@ export const useCompletion = () => {
 
       // Handle /clear slash command
       if (trimmedInput === "/clear") {
+        persistedFileIdsRef.current.clear();
         setState((prev) => ({
           ...prev,
           input: "",
@@ -305,24 +314,6 @@ export const useCompletion = () => {
       const signal = abortControllerRef.current.signal;
 
       try {
-        // Trim history to what the model can actually accept. Sending the
-        // whole conversation every turn used to hard-fail on a context error.
-        const budgeted = fitHistoryToBudget(
-          conversationHistoryRef.current.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-          })),
-          rawInput
-        );
-        const messageHistory = budgeted.turns;
-        setState((prev) => ({
-          ...prev,
-          historyNotice:
-            budgeted.droppedCount > 0
-              ? historyBudgetNotice(budgeted.droppedCount)
-              : null,
-        }));
-
         // Handle image attachments
         const imagesBase64: string[] = [];
         if (state.attachedFiles.length > 0) {
@@ -337,6 +328,39 @@ export const useCompletion = () => {
         const userMessage = attachedContext
           ? `${attachedContext}\n\n${input}`
           : input;
+
+        // Trim history to what the model can actually accept. The budget is given
+        // the whole turn, not just the typed line: attached files and screenshots
+        // are most of the payload in a repo-level question, and counting them as
+        // zero is how a session with six files attached hit a provider context
+        // error with a full history still in flight.
+        const budgeted = fitHistoryToBudget(
+          conversationHistoryRef.current.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          { text: input, contextText: attachedContext, imagesBase64 }
+        );
+
+        // No amount of dropped history rescues a turn this large, so say what to
+        // remove instead of sending it and relaying the provider's rejection.
+        if (budgeted.overflow) {
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: budgetOverflowNotice(budgeted),
+          }));
+          return;
+        }
+
+        const messageHistory = budgeted.turns;
+        setState((prev) => ({
+          ...prev,
+          historyNotice:
+            budgeted.droppedCount > 0
+              ? historyBudgetNotice(budgeted.droppedCount)
+              : null,
+        }));
 
         let fullResponse = "";
 
@@ -435,16 +459,27 @@ export const useCompletion = () => {
 
         // Save the conversation after successful completion
         if (fullResponse) {
-          await saveCurrentConversation(
-            input,
-            fullResponse,
-            state.attachedFiles
+          // Only the images this turn added. They stay attached for follow-ups, so
+          // saving all of them every turn would write the same base64 into the
+          // database once per message.
+          const newlyAttached = state.attachedFiles.filter(
+            (file) => !persistedFileIdsRef.current.has(file.id)
           );
-          // Clear input and attached files after saving
+          newlyAttached.forEach((file) =>
+            persistedFileIdsRef.current.add(file.id)
+          );
+
+          await saveCurrentConversation(input, fullResponse, newlyAttached);
+
+          // Attachments deliberately survive. A screenshot is the subject of the
+          // next three questions as often as it is the subject of one, and clearing
+          // it here meant the model answered "what line is that on?" about an image
+          // it no longer had, from what it had already said about it. They are
+          // visible in the paperclip badge and removable there, they are charged
+          // against the token budget, and MAX_FILES still caps them.
           setState((prev) => ({
             ...prev,
             input: "",
-            attachedFiles: [],
           }));
         }
       } catch (error) {
@@ -486,6 +521,7 @@ export const useCompletion = () => {
       return;
     }
     cancel();
+    persistedFileIdsRef.current.clear();
     setState((prev) => ({
       ...prev,
       input: "",
@@ -493,6 +529,30 @@ export const useCompletion = () => {
       error: null,
       attachedFiles: [],
       contextBlocks: [],
+      historyNotice: null,
+    }));
+  }, [cancel, keepEngaged]);
+
+  /**
+   * Puts the answer away without throwing away what the user assembled.
+   *
+   * The response panel is controlled by derived state, so it closes both when the
+   * user dismisses it and when a new turn clears the previous answer. `reset` was
+   * wired to that close, which meant sending a follow-up wiped the attached files
+   * and pastes: the chips stayed on screen for one more render while the request
+   * went out without them, and the model answered from whatever it already knew
+   * about the code. Dismissing clears the answer; only an explicit clear discards
+   * the context.
+   */
+  const dismissResponse = useCallback(() => {
+    if (keepEngaged) {
+      return;
+    }
+    cancel();
+    setState((prev) => ({
+      ...prev,
+      response: "",
+      error: null,
       historyNotice: null,
     }));
   }, [cancel, keepEngaged]);
@@ -526,6 +586,7 @@ export const useCompletion = () => {
   }, []);
 
   const startNewConversation = useCallback(() => {
+    persistedFileIdsRef.current.clear();
     setState((prev) => ({
       ...prev,
       currentConversationId: null,
@@ -744,7 +805,7 @@ export const useCompletion = () => {
         if (prompt) {
           // Auto mode: Submit directly to AI with screenshot
           const attachedFile: AttachedFile = {
-            id: Date.now().toString(),
+            id: newAttachmentId(),
             name: `screenshot_${Date.now()}.png`,
             type: "image/png",
             base64: base64,
@@ -873,7 +934,7 @@ export const useCompletion = () => {
         } else {
           // Manual mode: Add to attached files
           const attachedFile: AttachedFile = {
-            id: Date.now().toString(),
+            id: newAttachmentId(),
             name: `screenshot_${Date.now()}.png`,
             type: "image/png",
             base64: base64,
@@ -1258,6 +1319,7 @@ export const useCompletion = () => {
     submit,
     cancel,
     reset,
+    dismissResponse,
     setState,
     enableVAD,
     setEnableVAD,

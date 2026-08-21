@@ -47,6 +47,51 @@ const DEFAULT_VAD_CONFIG: VadConfig = {
   max_recording_duration_secs: 180, // 3 minutes default
 };
 
+type NumericVadField = Exclude<keyof VadConfig, "enabled">;
+
+const NUMERIC_VAD_FIELDS: readonly NumericVadField[] = [
+  "hop_size",
+  "sensitivity_rms",
+  "peak_threshold",
+  "silence_chunks",
+  "min_speech_chunks",
+  "pre_speech_chunks",
+  "noise_gate_threshold",
+  "max_recording_duration_secs",
+];
+
+/**
+ * A config stored before a field existed comes back missing that field. Read
+ * wholesale, that missing field reaches the duration Slider as NaN and reaches
+ * Rust as null, where serde rejects the whole VadConfig as "invalid args". So
+ * merge over the defaults, then fall back per field for anything that is not a
+ * finite number, which also covers a null or a string from a hand-edited value.
+ */
+const mergeVadConfig = (parsed: unknown): VadConfig => {
+  if (typeof parsed !== "object" || parsed === null) {
+    console.warn("Stored VAD config was not an object; using the defaults.");
+    return DEFAULT_VAD_CONFIG;
+  }
+
+  const stored = parsed as Partial<VadConfig>;
+  const merged: VadConfig = { ...DEFAULT_VAD_CONFIG, ...stored };
+
+  if (typeof stored.enabled !== "boolean") {
+    merged.enabled = DEFAULT_VAD_CONFIG.enabled;
+  }
+
+  for (const field of NUMERIC_VAD_FIELDS) {
+    if (!Number.isFinite(merged[field])) {
+      console.warn(
+        `Stored VAD config field "${field}" was not a finite number; using the default.`
+      );
+      merged[field] = DEFAULT_VAD_CONFIG[field];
+    }
+  }
+
+  return merged;
+};
+
 // Chat message interface (reusing from useCompletion)
 interface ChatMessage {
   id: string;
@@ -63,6 +108,16 @@ export interface ChatConversation {
   createdAt: number;
   updatedAt: number;
 }
+
+/**
+ * Spelled out rather than inferred with `typeof processWithAI`, because the ref
+ * the speech-detected listener reads it through is declared before it.
+ */
+type ProcessWithAI = (
+  transcription: string,
+  prompt: string,
+  previousMessages: Message[]
+) => Promise<void>;
 
 export type useSystemAudioType = ReturnType<typeof useSystemAudio>;
 
@@ -111,6 +166,14 @@ export function useSystemAudio() {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isSavingRef = useRef<boolean>(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  // The speech-detected listener is a native Tauri subscription. Naming these in
+  // its dep array would tear it down and re-register it on every keystroke in
+  // the context textarea, so it reads them through refs instead, same as
+  // useCompletion reads conversation state through refs rather than closures.
+  const useSystemPromptRef = useRef<boolean>(useSystemPrompt);
+  const contextContentRef = useRef<string>(contextContent);
+  const systemPromptRef = useRef<string>(systemPrompt);
+  const processWithAIRef = useRef<ProcessWithAI | null>(null);
 
   // Load context settings and VAD config from localStorage on mount
   useEffect(() => {
@@ -128,11 +191,11 @@ export function useSystemAudio() {
     }
 
     // Load VAD config
-    const savedVadConfig = safeLocalStorage.getItem("vad_config");
+    const savedVadConfig = safeLocalStorage.getItem(STORAGE_KEYS.VAD_CONFIG);
     if (savedVadConfig) {
       try {
-        const parsed = JSON.parse(savedVadConfig);
-        setVadConfig(parsed);
+        const parsed: unknown = JSON.parse(savedVadConfig);
+        setVadConfig(mergeVadConfig(parsed));
       } catch (error) {
         console.error("Failed to load VAD config:", error);
       }
@@ -275,9 +338,9 @@ export function useSystemAudio() {
                 setLastTranscription(transcription);
                 setError("");
 
-                const effectiveSystemPrompt = useSystemPrompt
-                  ? systemPrompt || DEFAULT_SYSTEM_PROMPT
-                  : contextContent || DEFAULT_SYSTEM_PROMPT;
+                const effectiveSystemPrompt = useSystemPromptRef.current
+                  ? systemPromptRef.current || DEFAULT_SYSTEM_PROMPT
+                  : contextContentRef.current || DEFAULT_SYSTEM_PROMPT;
 
                 const budgeted = fitHistoryToBudget(
                   conversation.messages.map((msg) => ({
@@ -291,7 +354,13 @@ export function useSystemAudio() {
                   console.warn(historyBudgetNotice(budgeted.droppedCount));
                 }
 
-                await processWithAI(
+                const processWithAICurrent = processWithAIRef.current;
+                if (!processWithAICurrent) {
+                  setError("AI processing is not ready yet");
+                  return;
+                }
+
+                await processWithAICurrent(
                   transcription,
                   effectiveSystemPrompt,
                   previousMessages
@@ -325,6 +394,9 @@ export function useSystemAudio() {
     selectedSttProvider,
     allSttProviders,
     conversation.messages.length,
+    // useSystemPrompt, contextContent, systemPrompt and processWithAI are
+    // intentionally absent: they are read through refs above, so a settings edit
+    // reaches the next transcription without re-registering the native listener.
   ]);
 
   // Context management functions
@@ -420,7 +492,7 @@ export function useSystemAudio() {
         // Update conversation state with the latest transcription
         setConversation((prev) => ({
           ...prev,
-          messages: [userMessage, ...prev.messages],
+          messages: [...prev.messages, userMessage],
           updatedAt: timestamp,
           title: prev.title || generateConversationTitle(lastTranscription),
         }));
@@ -448,7 +520,12 @@ export function useSystemAudio() {
       setRecordingProgress(0);
       setError("");
 
+      // "" is what the app context stores when no device has been picked, and
+      // "default" is the sentinel the settings page may write. Either one means
+      // "let Rust choose"; passing Some("") through would name a device that
+      // cannot exist.
       const deviceId =
+        selectedAudioDevices.output.id &&
         selectedAudioDevices.output.id !== "default"
           ? selectedAudioDevices.output.id
           : null;
@@ -535,7 +612,12 @@ export function useSystemAudio() {
           const timestamp = Date.now();
           setConversation((prev) => ({
             ...prev,
+            // Oldest first, matching the text path in useCompletion.
+            // fitHistoryToBudget walks from the end to find the newest turns, so
+            // a newest-first array made it keep the oldest turns and hand the
+            // model the conversation in reverse.
             messages: [
+              ...prev.messages,
               {
                 id: generateMessageId("user", timestamp),
                 role: "user" as const,
@@ -548,7 +630,6 @@ export function useSystemAudio() {
                 content: fullResponse,
                 timestamp: timestamp + 1,
               },
-              ...prev.messages,
             ],
             updatedAt: timestamp,
             title: prev.title || generateConversationTitle(transcription),
@@ -564,6 +645,15 @@ export function useSystemAudio() {
     [selectedAIProvider, allAiProviders, conversation.messages]
   );
 
+  // Keeps everything the speech-detected listener reads current, so the listener
+  // itself can stay registered across a settings edit or a provider switch.
+  useEffect(() => {
+    useSystemPromptRef.current = useSystemPrompt;
+    contextContentRef.current = contextContent;
+    systemPromptRef.current = systemPrompt;
+    processWithAIRef.current = processWithAI;
+  }, [useSystemPrompt, contextContent, systemPrompt, processWithAI]);
+
   const startCapture = useCallback(async () => {
     try {
       setError("");
@@ -574,6 +664,10 @@ export function useSystemAudio() {
         setIsPopoverOpen(true);
         return;
       }
+      // Clear it on the way through, not just when a new conversation starts:
+      // otherwise one denied check left PermissionFlow rendered forever, even
+      // after the user granted access and came back.
+      setSetupRequired(false);
 
       const isContinuous = !vadConfig.enabled;
 
@@ -602,7 +696,9 @@ export function useSystemAudio() {
       // Stop any existing capture
       await invoke<string>("stop_system_audio_capture");
 
+      // Both "" (nothing picked yet) and "default" mean "let Rust choose".
       const deviceId =
+        selectedAudioDevices.output.id &&
         selectedAudioDevices.output.id !== "default"
           ? selectedAudioDevices.output.id
           : null;
@@ -799,7 +895,10 @@ export function useSystemAudio() {
   const updateVadConfiguration = useCallback(async (config: VadConfig) => {
     try {
       setVadConfig(config);
-      safeLocalStorage.setItem("vad_config", JSON.stringify(config));
+      safeLocalStorage.setItem(
+        STORAGE_KEYS.VAD_CONFIG,
+        JSON.stringify(config)
+      );
       await invoke("update_vad_config", { config });
     } catch (error) {
       console.error("Failed to update VAD config:", error);

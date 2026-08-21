@@ -17,6 +17,29 @@ export interface STTParams {
   audio: File | Blob;
 }
 
+// Conventional file extensions for the audio MIME types this app's recorders
+// can produce. STT endpoints (OpenAI Whisper and most compatible APIs)
+// dispatch on the filename extension, so every upload needs a name that
+// actually matches its content instead of a hardcoded "audio.wav".
+const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
+  "audio/wav": "wav",
+  "audio/mp4": "mp4",
+  "audio/mpeg": "mp3",
+  "audio/webm": "webm",
+  "audio/ogg": "ogg",
+};
+
+function getAudioFileName(mimeType: string): string {
+  const essence = mimeType.split(";")[0].trim().toLowerCase();
+  const knownExtension = AUDIO_EXTENSION_BY_MIME[essence];
+  if (knownExtension) return `audio.${knownExtension}`;
+
+  // Unrecognised type: derive the extension from the subtype (e.g.
+  // "audio/aac" -> "audio.aac") instead of guessing a specific known format.
+  const subtype = essence.split("/")[1];
+  return `audio.${subtype || "wav"}`;
+}
+
 /**
  * Transcribes audio and returns either the transcription or an error/warning message as a single string.
  */
@@ -95,7 +118,7 @@ export async function fetchSTT(params: STTParams): Promise<string> {
       const freshBlob = new Blob([await audio.arrayBuffer()], {
         type: audio.type,
       });
-      form.append("file", freshBlob, "audio.wav");
+      form.append("file", freshBlob, getAudioFileName(audio.type));
       const headerKeys = Object.keys(headers).map((k) =>
         k.toUpperCase().replace(/[-_]/g, "")
       );
@@ -192,12 +215,15 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     }
 
     // Extract transcription
-    const rawPath = provider.responseContentPath || "text";
-    const path = rawPath.charAt(0).toLowerCase() + rawPath.slice(1);
-    const transcription = (getByPath(data, path) || "").trim();
+    const path = provider.responseContentPath || "text";
+    const rawTranscription = getByPath(data, path);
+    const transcription =
+      typeof rawTranscription === "string" ? rawTranscription.trim() : "";
 
     if (!transcription) {
-      return [...warnings, "No transcription found"].join("; ");
+      throw new Error(
+        `STT response did not contain a transcription at path "${path}"`
+      );
     }
 
     // Return transcription with any warnings

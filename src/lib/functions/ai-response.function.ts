@@ -15,12 +15,43 @@ import {
 import { getResponseSettings, RESPONSE_LENGTHS, LANGUAGES } from "@/lib";
 import { MARKDOWN_FORMATTING_INSTRUCTIONS } from "@/config/constants";
 
-function buildEnhancedSystemPrompt(baseSystemPrompt?: string): string {
+/**
+ * Added only when an image is attached.
+ *
+ * Reading code off a screenshot is accurate to roughly 1.5% of characters, which
+ * only matters when the wrong character is an operator. Given a screenshot of
+ * `if !matches!(parsed.scheme(), "http" | "https")` the model dropped the `!`,
+ * concluded the function rejected http and https, and recommended deleting the
+ * check: the guard that stops a stored secret being sent to a `file://` URL. The
+ * answer was fluent and cited line numbers.
+ *
+ * Asked to quote the line verbatim first, the same model on the same screenshot read
+ * the `!` and described the behaviour correctly. Quoting does not make it read
+ * better, it makes a misreading visible instead of hidden inside a conclusion.
+ *
+ * The second half addresses the other measured failure: on a full-screen capture the
+ * model transcribes about 60% of the visible code and stops, with no sign that the
+ * rest went unread.
+ */
+export const IMAGE_GROUNDING_INSTRUCTIONS =
+  "When an attached image contains text you rely on, quote that text verbatim, " +
+  "character for character, before drawing any conclusion from it. If part of the " +
+  "image is unreadable, or you cannot see all of it, say which part instead of " +
+  "filling it in.";
+
+function buildEnhancedSystemPrompt(
+  baseSystemPrompt?: string,
+  hasImages = false
+): string {
   const responseSettings = getResponseSettings();
   const prompts: string[] = [];
 
   if (baseSystemPrompt) {
     prompts.push(baseSystemPrompt);
+  }
+
+  if (hasImages) {
+    prompts.push(IMAGE_GROUNDING_INSTRUCTIONS);
   }
 
   const lengthOption = RESPONSE_LENGTHS.find(
@@ -71,7 +102,10 @@ export async function* fetchAIResponse(params: {
       return;
     }
 
-    const enhancedSystemPrompt = buildEnhancedSystemPrompt(systemPrompt);
+    const enhancedSystemPrompt = buildEnhancedSystemPrompt(
+      systemPrompt,
+      imagesBase64.length > 0
+    );
 
     if (!provider) {
       throw new Error(`Provider not provided`);

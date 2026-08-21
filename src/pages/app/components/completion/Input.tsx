@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Loader2, XIcon, Clipboard, FileCode2 } from "lucide-react";
 import {
   Popover,
@@ -45,10 +45,15 @@ const SLASH_COMMANDS = [
   { command: "/clear", description: "Clear conversation", example: "/clear" },
 ];
 
+/** The prompt box points `aria-controls`/`aria-activedescendant` at these. */
+const SLASH_MENU_ID = "slash-command-menu";
+const slashOptionId = (command: string) => `slash-command-${command.slice(1)}`;
+
 export const Input = ({
   isPopoverOpen,
   isLoading,
   reset,
+  dismissResponse,
   input,
   setInput,
   handleKeyPress,
@@ -72,6 +77,60 @@ export const Input = ({
   historyNotice,
 }: UseCompletionReturn & { isHidden: boolean }) => {
   const [clipboardSnippet, setClipboardSnippet] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
+
+  /** Clipboard text already pushed at the user, so it is never pushed twice. */
+  const offeredClipboardRef = useRef<string | null>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // The whitespace-delimited head of the prompt is what the menu filters on, so
+  // keying off it leaves the selection alone while an argument is being typed.
+  const commandToken = input.split(" ")[0].toLowerCase();
+
+  const filteredCommands = useMemo(
+    () => SLASH_COMMANDS.filter((cmd) => cmd.command.startsWith(commandToken)),
+    [commandToken]
+  );
+
+  // A space means the command is chosen and the rest is its argument; leaving the
+  // menu up covers the answer area for the whole argument, and makes Enter
+  // ambiguous between "accept a command" and "send this prompt".
+  const slashMenuOpen =
+    input.startsWith("/") &&
+    !input.includes(" ") &&
+    !slashMenuDismissed &&
+    !isPopoverOpen &&
+    !isLoading &&
+    filteredCommands.length > 0;
+
+  // The reset effect below runs after render, so one paint can still hold an
+  // index past the end of a list that just narrowed.
+  const activeCommandIndex =
+    activeIndex < filteredCommands.length ? activeIndex : 0;
+
+  useEffect(() => {
+    setActiveIndex(0);
+    setSlashMenuDismissed(false);
+  }, [commandToken]);
+
+  useEffect(() => {
+    if (!slashMenuOpen) return;
+    optionRefs.current[activeCommandIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeCommandIndex, slashMenuOpen]);
+
+  const acceptCommand = useCallback(
+    (command: string) => {
+      setInput(command + (command === "/clear" ? "" : " "));
+      inputRef.current?.focus();
+    },
+    [setInput, inputRef]
+  );
+
+  const dismissClipboardPeek = useCallback(() => {
+    if (clipboardSnippet) offeredClipboardRef.current = clipboardSnippet;
+    setClipboardSnippet(null);
+  }, [clipboardSnippet]);
 
   // WKWebView does not honor `field-sizing: content`, so grow the box here.
   const growToFitContent = useCallback((element: HTMLTextAreaElement | null) => {
@@ -89,39 +148,65 @@ export const Input = ({
     growToFitContent(inputRef.current);
   }, [input, growToFitContent, inputRef]);
 
+  // The peek exists for "I summoned Omni with nothing typed", so it is armed by
+  // the HUD appearing and by nothing else. It used to depend on `input` and bail
+  // only when `input` was truthy, which meant deleting a prompt re-read the
+  // clipboard and offered the just-deleted text straight back, with the native
+  // window growing under it because the bar carries `data-hud-overlay`.
+  // `isHidden` is the only dependency on purpose: this now runs on mount and on
+  // each hide/show, never on a prompt edit.
   useEffect(() => {
-    if (isPopoverOpen || input || isLoading || isHidden) {
+    if (isHidden) {
       setClipboardSnippet(null);
       return;
     }
 
+    let cancelled = false;
+
     const checkClipboard = async () => {
       try {
-        const text = await navigator.clipboard.readText();
+        const text = (await navigator.clipboard.readText()).trim();
+        if (cancelled) return;
         if (
-          text &&
-          text.trim().length >= 4 &&
-          text.trim().length <= CLIPBOARD_PEEK_LIMIT
+          text.length >= 4 &&
+          text.length <= CLIPBOARD_PEEK_LIMIT &&
+          text !== offeredClipboardRef.current
         ) {
-          setClipboardSnippet(text.trim());
-        } else {
-          setClipboardSnippet(null);
+          setClipboardSnippet(text);
         }
       } catch {
-        setClipboardSnippet(null);
+        // Reading the clipboard without a user gesture is refused on purpose by
+        // the webview. That is the normal case, not a fault worth reporting: the
+        // peek is a shortcut, and everything else in the prompt box still works.
       }
     };
 
-    checkClipboard();
-  }, [isPopoverOpen, input, isLoading, isHidden]);
+    void checkClipboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isHidden]);
+
+  // Typing over the peek declines it. Marking the value offered is what keeps it
+  // from coming back the moment the prompt is emptied again.
+  useEffect(() => {
+    if (!input || !clipboardSnippet) return;
+    offeredClipboardRef.current = clipboardSnippet;
+    setClipboardSnippet(null);
+  }, [input, clipboardSnippet]);
 
   return (
     <div className="relative flex-1">
       <Popover
         open={isPopoverOpen}
         onOpenChange={(open) => {
+          // Derived state closes this panel too, not just the user: sending a
+          // follow-up clears the previous answer, which flips `open` to false.
+          // Clearing everything here therefore threw away the attached files
+          // mid-turn. Dismissing puts the answer away and keeps the context.
           if (!open && !isLoading && !keepEngaged) {
-            reset();
+            dismissResponse();
           }
         }}
       >
@@ -165,9 +250,73 @@ export const Input = ({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
+                  // The menu has to claim these before `handleKeyPress`, which
+                  // spends ArrowUp/ArrowDown on prompt-history recall: pressing
+                  // ArrowDown over an open menu used to replace the typed `/`
+                  // with a whole previous submission.
+                  if (slashMenuOpen) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setActiveIndex(
+                        (index) => (index + 1) % filteredCommands.length
+                      );
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActiveIndex(
+                        (index) =>
+                          (index - 1 + filteredCommands.length) %
+                          filteredCommands.length
+                      );
+                      return;
+                    }
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      acceptCommand(filteredCommands[activeCommandIndex].command);
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setSlashMenuDismissed(true);
+                      return;
+                    }
+                  }
+
+                  if (e.key === "Escape" && clipboardSnippet) {
+                    e.preventDefault();
+                    dismissClipboardPeek();
+                    return;
+                  }
+
+                  // Chip-input convention: with nothing left to delete, Backspace
+                  // takes the last attachment. Without it a context chip has no
+                  // keyboard route out, so clearing the prompt leaves a paste icon
+                  // behind that looks like the delete failed.
+                  if (
+                    e.key === "Backspace" &&
+                    e.currentTarget.value === "" &&
+                    contextBlocks.length > 0
+                  ) {
+                    e.preventDefault();
+                    removeContextBlock(
+                      contextBlocks[contextBlocks.length - 1].id
+                    );
+                    return;
+                  }
+
                   if (e.key === "Enter" && !e.shiftKey) playHapticClick();
                   handleKeyPress(e);
                 }}
+                aria-expanded={slashMenuOpen}
+                aria-controls={slashMenuOpen ? SLASH_MENU_ID : undefined}
+                aria-activedescendant={
+                  slashMenuOpen
+                    ? slashOptionId(
+                        filteredCommands[activeCommandIndex].command
+                      )
+                    : undefined
+                }
                 onPaste={handlePaste}
                 disabled={isLoading || isHidden}
                 className={`h-9 min-h-9 resize-none overflow-y-auto border-primary/50 py-1 leading-snug focus-visible:border-ring/60 focus-visible:ring-ring dark:border-input/80 dark:focus-visible:ring-ring/60 ${
@@ -181,12 +330,17 @@ export const Input = ({
             {clipboardSnippet && !input && !isPopoverOpen && !isLoading && (
               <div
                 data-hud-overlay
-                className="absolute left-0 right-0 top-full mt-2 flex items-center justify-between px-3 py-1.5 rounded-xl bg-card/95 backdrop-blur-2xl border border-white/10 shadow-xl text-xs animate-in fade-in slide-in-from-top-1 duration-150 z-40">
+                className="absolute left-0 right-0 top-full mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-2 py-1.5 rounded-xl bg-card/95 backdrop-blur-2xl border border-white/10 shadow-xl text-xs animate-in fade-in slide-in-from-top-1 duration-150 z-40">
                 <div className="flex items-center gap-1.5 text-muted-foreground truncate max-w-[160px]">
                   <Clipboard className="size-3 text-cyan-400 shrink-0" />
                   <span className="truncate text-[11px] font-mono opacity-80">"{clipboardSnippet.slice(0, 24)}..."</span>
                 </div>
-                <div className="flex items-center gap-1">
+                {/* These four labelled pills have never fitted the ~197px prompt
+                    column of a 600px HUD on one line; they only stayed inside the
+                    card by wrapping each label onto two lines and still spilled
+                    past the right edge. Wrapping the row is what leaves room for
+                    the dismiss control without anything being drawn outside. */}
+                <div className="flex w-full flex-wrap items-center justify-end gap-1">
                   {[
                     { label: "⚡ Fix", prefix: "/fix " },
                     { label: "🚀 Commit", prefix: "/commit " },
@@ -204,53 +358,81 @@ export const Input = ({
                         } else {
                           setInput(`${action.prefix}${clipboardSnippet}`);
                         }
+                        dismissClipboardPeek();
                         setTimeout(() => {
                           inputRef.current?.focus();
                         }, 50);
                       }}
-                      className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-muted/60 hover:bg-primary/20 hover:text-primary hover:border-primary/40 border border-input/40 transition cursor-pointer select-none"
+                      className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-muted/60 hover:bg-primary/20 hover:text-primary hover:border-primary/40 border border-input/40 transition cursor-pointer select-none"
                     >
                       {action.label}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    data-slot="clipboard-peek-dismiss"
+                    onClick={dismissClipboardPeek}
+                    title="Dismiss clipboard suggestion"
+                    className="cursor-pointer rounded text-muted-foreground/70 transition hover:text-destructive"
+                  >
+                    <XIcon className="size-2.5" />
+                  </button>
                 </div>
               </div>
             )}
 
             {/* Slash command autocomplete */}
-            {input.startsWith("/") && !isPopoverOpen && !isLoading && (
+            {slashMenuOpen && (
               <div
                 data-hud-overlay
                 className="absolute left-0 right-0 top-full mt-2 bg-popover/95 backdrop-blur-md border border-input/60 rounded-xl shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
                 <div className="text-[10px] text-muted-foreground/70 px-2 py-1 font-semibold uppercase tracking-wider">
                   Slash Commands
                 </div>
-                <div className="flex flex-col gap-0.5">
-                  {SLASH_COMMANDS.filter((cmd) =>
-                    cmd.command.startsWith(input.split(" ")[0].toLowerCase())
-                  ).map((cmd) => (
-                    <button
-                      key={cmd.command}
-                      type="button"
-                      onClick={() => {
-                        setInput(cmd.command + (cmd.command === "/clear" ? "" : " "));
-                        inputRef.current?.focus();
-                      }}
-                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs hover:bg-primary/10 hover:text-primary transition cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-primary">
+                <div
+                  id={SLASH_MENU_ID}
+                  role="listbox"
+                  aria-label="Slash commands"
+                  className="flex flex-col gap-0.5 max-h-64 overflow-y-auto"
+                >
+                  {filteredCommands.map((cmd, index) => {
+                    const isActive = index === activeCommandIndex;
+                    return (
+                      <button
+                        key={cmd.command}
+                        ref={(node) => {
+                          optionRefs.current[index] = node;
+                        }}
+                        id={slashOptionId(cmd.command)}
+                        type="button"
+                        role="option"
+                        aria-selected={isActive}
+                        // Hovering moves the keyboard selection instead of
+                        // painting a second highlight, so the pointer and the
+                        // arrow keys can never disagree about what Enter takes.
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => acceptCommand(cmd.command)}
+                        className={`flex min-w-0 items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs transition cursor-pointer ${
+                          isActive
+                            ? "bg-primary/15"
+                            : "hover:bg-primary/10 hover:text-primary"
+                        }`}
+                      >
+                        {/* One line per row. The prompt column is ~210px, so
+                            three columns wrapped every row onto three lines and
+                            only two commands fit the menu at once, which made
+                            arrow-key navigation useless. cmd.example stays in
+                            the data as documentation; there is no width to
+                            render it in. */}
+                        <span className="shrink-0 font-semibold text-primary">
                           {cmd.command}
                         </span>
-                        <span className="text-muted-foreground">
+                        <span className="truncate text-muted-foreground">
                           {cmd.description}
                         </span>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground/60">
-                        {cmd.example}
-                      </span>
-                    </button>
-                  ))}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -286,6 +468,13 @@ export const Input = ({
           side="bottom"
           className="w-screen p-0 border border-white/10 shadow-2xl overflow-hidden rounded-2xl bg-popover/90 backdrop-blur-2xl"
           sideOffset={8}
+          // The trigger is a plain `div`, so Radix's default focus return lands
+          // on `document.body` and the next keystroke goes nowhere. Send it back
+          // to the prompt box instead.
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            inputRef.current?.focus();
+          }}
         >
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50 bg-muted/20">
             <div className="flex flex-row gap-2 items-center">
@@ -344,7 +533,11 @@ export const Input = ({
             </div>
           </div>
 
-          <ScrollArea ref={scrollAreaRef} className="h-[calc(100vh-7rem)]">
+          {/* Content-sized up to the cap, not a fixed slice of the window: a fixed
+              height made a one-line answer occupy the same 488px as a long one, and
+              made the panel height depend on the window height it is supposed to
+              determine. */}
+          <ScrollArea ref={scrollAreaRef} className="max-h-[488px]">
             <div className="p-4">
               {error && (
                 <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
@@ -360,14 +553,19 @@ export const Input = ({
                 </div>
               )}
               {isLoading && (
-                <div className="flex items-center gap-2 my-4 text-muted-foreground animate-pulse select-none">
+                <div
+                  data-hud-loading
+                  className="flex items-center gap-2 my-4 text-muted-foreground animate-pulse select-none"
+                >
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span className="text-sm">Generating response...</span>
                 </div>
               )}
               {response && (
                 <div>
-                  <Markdown>{response}</Markdown>
+                  <div data-hud-response>
+                    <Markdown>{response}</Markdown>
+                  </div>
                   {!isLoading && (
                     <div className="flex flex-col gap-2 pt-3 border-t border-border/40 mt-3">
                       <div className="flex flex-wrap items-center justify-between gap-1.5">

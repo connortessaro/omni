@@ -37,3 +37,6 @@ dev-harness/out/
 
 # Local session handoff, not for a public repo
 .claude/
+
+# tsc project-reference build info
+*.tsbuildinfo

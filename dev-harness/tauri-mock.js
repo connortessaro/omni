@@ -6,6 +6,30 @@
   const callbacks = new Map();
   let nextCallbackId = 1;
 
+  // dev-harness/provider-proxy.mjs, which holds the API key so this page never
+  // does — the same split the shipped app relies on.
+  const PROXY = window.__HARNESS_PROXY__ ?? "http://127.0.0.1:1422";
+
+  const cancelled = new Set();
+
+  /**
+   * Delivers messages the way Tauri's IPC bridge delivers them to a Channel:
+   * `{index, message}` per chunk and a final `{index, end: true}`. Going through
+   * the registered callback rather than poking `channel.onmessage` keeps the real
+   * Channel ordering logic in the path.
+   */
+  const channelSender = (channel) => {
+    const id =
+      typeof channel === "string"
+        ? Number(channel.replace("__CHANNEL__:", ""))
+        : channel?.id;
+    const entry = callbacks.get(id);
+    let index = 0;
+    const send = (message) => entry?.callback({ index: index++, message });
+    send.end = () => entry?.callback({ index: index++, end: true });
+    return send;
+  };
+
   const VAD_CONFIG = {
     enabled: false,
     threshold: 0.5,
@@ -13,7 +37,74 @@
     speech_pad_ms: 300,
   };
 
-  const AUDIO_DEVICES = [{ id: "mock-device", name: "Mock Audio Device" }];
+  /**
+   * Forwards a provider request through the proxy and streams the reply back over
+   * the channel, mirroring src-tauri/src/provider.rs. TextDecoder in streaming
+   * mode holds back a split multi-byte character, which is the same thing
+   * `take_complete_utf8` does in Rust.
+   */
+  const providerRequest = async ({ request, onChunk }) => {
+    const emit = channelSender(onChunk);
+
+    const response = await fetch(`${PROXY}/provider`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: request.url,
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+      }),
+    }).catch((error) => {
+      throw new Error(
+        `Harness proxy unreachable at ${PROXY}. Start it with \`npm run dev:live\`. (${error.message})`
+      );
+    });
+
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      throw new Error(detail?.error ?? `Harness proxy returned ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (cancelled.has(request.requestId)) break;
+      const text = decoder.decode(value, { stream: true });
+      if (text) emit(text);
+    }
+    emit.end();
+    cancelled.delete(request.requestId);
+    return null;
+  };
+
+  /**
+   * The app's own capture is a native screen grab no browser can perform, so the
+   * proxy serves a fixture PNG instead. Falls back to an empty string when the
+   * proxy is not running, which is the layout-only probe's case.
+   */
+  const captureToBase64 = async () => {
+    try {
+      const response = await fetch(`${PROXY}/capture`);
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null);
+        console.warn(
+          `[harness] capture_to_base64: ${detail?.error ?? response.status}`
+        );
+        return "";
+      }
+      const { base64, bytes, path } = await response.json();
+      console.log(`[harness] capture fixture ${path} (${bytes} bytes)`);
+      return base64;
+    } catch (error) {
+      console.warn(
+        `[harness] capture_to_base64: proxy unreachable at ${PROXY} (${error.message})`
+      );
+      return "";
+    }
+  };
 
   const responses = {
     get_app_version: () => "0.0.0-harness",
@@ -28,10 +119,17 @@
     check_shortcuts_registered: () => true,
     get_registered_shortcuts: () => ({}),
     validate_shortcut_key: () => true,
-    capture_to_base64: () => "",
+    capture_to_base64: captureToBase64,
     start_screen_capture: () => null,
     capture_selected_area: () => null,
     close_overlay_window: () => null,
+    // macOS captures system audio through ScreenCaptureKit
+    // (src-tauri/src/speaker/macos.rs), which authorizes against Screen
+    // Recording. This mirrors the granted path, because that is the state the
+    // layout probe needs to exercise. The denied path is a rejection from
+    // get_output_devices, not an empty list: resolving empty is what let a
+    // fabricated waveform pass as a working pipeline before, so keep these two
+    // honest against the Rust side whenever it changes.
     check_system_audio_access: () => true,
     request_system_audio_access: () => true,
     start_system_audio_capture: () => null,
@@ -39,15 +137,42 @@
     manual_stop_continuous: () => null,
     get_vad_config: () => VAD_CONFIG,
     update_vad_config: () => null,
-    get_capture_status: () => ({ is_capturing: false }),
+    // Real command returns a bare bool (speaker/commands.rs get_capture_status),
+    // not an object.
+    get_capture_status: () => false,
     get_audio_sample_rate: () => 48000,
-    get_input_devices: () => AUDIO_DEVICES,
-    get_output_devices: () => AUDIO_DEVICES,
+    // One entry, matching src-tauri/src/speaker/macos.rs: ScreenCaptureKit taps
+    // the whole output mix and has no per-device selection, so a longer list
+    // would be a dropdown whose entries all did the same thing.
+    get_output_devices: () => [
+      { id: "system-mix", name: "System audio (all output)", is_default: true },
+    ],
+
+    provider_request: providerRequest,
+    provider_request_cancel: ({ requestId }) => {
+      cancelled.add(requestId);
+      return null;
+    },
+
+    // The credential store has no browser equivalent. Reporting "stored" is
+    // truthful here: the proxy really does hold the key.
+    secret_store: () => null,
+    secret_delete: () => null,
+    secret_exists: () => true,
   };
 
-  const pluginResponse = (cmd) => {
+  // tauri-plugin-sql returns `[rowsAffected, lastInsertId]` from execute and the
+  // JS wrapper destructures it. Returning an object made every conversation save
+  // fail with "{} is not iterable", which surfaced in the UI as a save error.
+  let nextInsertId = 1;
+
+  const pluginResponse = (cmd, args) => {
     if (cmd.startsWith("plugin:sql|")) {
-      return cmd.endsWith("select") ? [] : { rowsAffected: 0, lastInsertId: 0 };
+      if (cmd.endsWith("load")) return args?.db ?? "sqlite:harness.db";
+      if (cmd.endsWith("select")) return [];
+      if (cmd.endsWith("execute")) return [1, nextInsertId++];
+      if (cmd.endsWith("close")) return true;
+      return null;
     }
     if (cmd.startsWith("plugin:autostart|")) return false;
     if (cmd.startsWith("plugin:global-shortcut|")) return false;
@@ -77,7 +202,7 @@
     invoke(cmd, args) {
       calls.push({ cmd, args });
       const handler = responses[cmd];
-      const value = handler ? handler(args) : pluginResponse(cmd);
+      const value = handler ? handler(args) : pluginResponse(cmd, args);
       return Promise.resolve(value);
     },
   };

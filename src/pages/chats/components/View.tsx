@@ -243,6 +243,9 @@ const View = () => {
                   completion.submit(text);
                 }}
                 onCancel={() => completion.setIsRecording(false)}
+                onError={(message) =>
+                  completion.setState((prev) => ({ ...prev, error: message }))
+                }
               />
             ) : (
               <>

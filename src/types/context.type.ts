@@ -40,6 +40,11 @@ export type IContextType = {
   toggleAlwaysOnTop: (isEnabled: boolean) => Promise<void>;
   toggleAutostart: (isEnabled: boolean) => Promise<void>;
   loadData: () => void;
+  // input.id and output.id are two different id namespaces that happen to
+  // share one shape: input.id is a MediaDevices deviceId (enumerated by the
+  // webview, passed to getUserMedia), output.id is a native OS device id
+  // (enumerated by the Rust speaker backend, never valid as a deviceId).
+  // Don't pass one where the other is expected.
   selectedAudioDevices: {
     input: { id: string; name: string };
     output: { id: string; name: string };

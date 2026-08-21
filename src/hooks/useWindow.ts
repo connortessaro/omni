@@ -22,6 +22,36 @@ const isAnyPopoverOpen = (): boolean => {
   return popoverContents.length > 0;
 };
 
+/**
+ * How tall the window has to be to show the HUD plus whatever popover is open.
+ *
+ * Popovers render in a portal outside the HUD card, so the card's own box says
+ * nothing about them and the height has to be measured from the card's top to the
+ * lowest open popover's bottom. This used to be a flat 600px, which meant a
+ * one-word answer covered as much of the screen as a long one: an always-on-top
+ * overlay taking a third of the display to say "HARNESS OK".
+ */
+const expandedHudHeight = (): number => {
+  const card = document.querySelector('[data-slot="card"]');
+  if (!card) return MAX_HUD_HEIGHT;
+
+  const cardRect = card.getBoundingClientRect();
+  let bottom = cardRect.bottom;
+
+  document
+    .querySelectorAll("[data-radix-popper-content-wrapper]")
+    .forEach((wrapper) => {
+      const rect = wrapper.getBoundingClientRect();
+      if (rect.height > 0) bottom = Math.max(bottom, rect.bottom);
+    });
+
+  // Nothing measurable open yet: ask for the full height rather than clipping the
+  // popover that is about to appear.
+  if (bottom <= cardRect.bottom) return MAX_HUD_HEIGHT;
+
+  return clampHudHeight(bottom - cardRect.top);
+};
+
 export const useWindowResize = () => {
   const resizeWindow = useCallback(async (expanded: boolean) => {
     try {
@@ -31,7 +61,7 @@ export const useWindowResize = () => {
         return;
       }
 
-      const newHeight = expanded ? MAX_HUD_HEIGHT : measuredHudHeight;
+      const newHeight = expanded ? expandedHudHeight() : measuredHudHeight;
 
       await invoke("set_window_height", {
         window,
@@ -68,11 +98,24 @@ export const useWindowResize = () => {
     };
 
     // Popovers render in a portal outside the HUD card, so the content-height
-    // observer cannot see them. Any open popover needs the tall window, or it is
+    // observer cannot see them. Any open popover needs a taller window, or it is
     // clipped at the collapsed height with no way to reach its contents.
-    const observer = new MutationObserver(() => {
-      resizeWindow(isAnyPopoverOpen());
-    });
+    //
+    // Measured more than once on purpose. A popover animates in, so the first
+    // measurement lands on a box that has not finished laying out; without the
+    // re-measure the height stays at the full-height fallback and never corrects,
+    // which is exactly what a short static answer looks like.
+    const applySoon = () => {
+      const expanded = isAnyPopoverOpen();
+      void resizeWindow(expanded);
+      requestAnimationFrame(() => void resizeWindow(isAnyPopoverOpen()));
+    };
+
+    const observer = new MutationObserver(applySoon);
+
+    const onAnimationEnd = () => applySoon();
+    document.addEventListener("animationend", onAnimationEnd, true);
+    document.addEventListener("transitionend", onAnimationEnd, true);
 
     // Observe the body for changes to detect popover open/close
     observer.observe(document.body, {
@@ -88,6 +131,8 @@ export const useWindowResize = () => {
     return () => {
       document.removeEventListener("mousedown", handleMouseDown);
       document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("animationend", onAnimationEnd, true);
+      document.removeEventListener("transitionend", onAnimationEnd, true);
       observer.disconnect();
     };
   }, [resizeWindow]);
@@ -109,11 +154,6 @@ export const useHudAutoHeight = (ref: RefObject<HTMLElement | null>) => {
      * absolutely, so they add no flow height and the card's own box does not
      * cover them. Measuring to the lowest edge of the subtree is what keeps the
      * native window from clipping them.
-     */
-    /**
-     * The clipboard suggestion bar and the slash-command menu are positioned
-     * absolutely, so they add no flow height and the card's own box does not
-     * cover them. Measure to the lowest edge of the subtree instead.
      */
     const contentHeight = (): number => {
       const cardRect = element.getBoundingClientRect();

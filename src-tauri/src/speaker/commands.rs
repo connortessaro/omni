@@ -516,9 +516,11 @@ pub fn check_system_audio_access(_app: AppHandle) -> Result<bool, String> {
 pub async fn request_system_audio_access(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
+        // Capture goes through ScreenCaptureKit, so the switch the user needs is
+        // under Screen Recording, not Audio Capture.
         app.shell()
             .command("open")
-            .args(["x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"])
+            .args(["x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"])
             .spawn()
             .map_err(|e| {
                 error!("Failed to open system preferences: {}", e);
@@ -607,14 +609,6 @@ pub fn get_audio_sample_rate(_app: AppHandle) -> Result<u32, String> {
     let sr = stream.sample_rate();
 
     Ok(sr)
-}
-
-#[tauri::command]
-pub fn get_input_devices() -> Result<Vec<AudioDevice>, String> {
-    crate::speaker::list_input_devices().map_err(|e| {
-        error!("Failed to get input devices: {}", e);
-        format!("Failed to get input devices: {}", e)
-    })
 }
 
 #[tauri::command]
