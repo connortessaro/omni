@@ -39,3 +39,18 @@ jobs:
           # with "Couldn't load ./Cargo.lock", which meant Rust advisories were
           # never actually checked, including on the Dependabot Cargo PRs.
           working-directory: src-tauri
+          # Three advisories with no fix available to us. Listed rather than left
+          # failing, because a job that is permanently red gates nothing and
+          # teaches everyone to ignore it, which is how the broken path above
+          # survived for months. Everything else, and anything new, still fails
+          # the build. Revisit whenever these dependencies move.
+          #
+          #   RUSTSEC-2026-0194  quick-xml, quadratic run time on duplicate attrs
+          #   RUSTSEC-2026-0195  quick-xml, unbounded namespace allocation
+          #     Both want >=0.41.0 and arrive via `plist` (macOS bundling) and
+          #     `xcb` (Linux X11). Neither parses untrusted input here.
+          #   RUSTSEC-2023-0071  rsa, Marvin timing side channel
+          #     No patched release exists at all. Arrives via `sqlx-mysql`, which
+          #     `tauri-plugin-sql` pulls in although this app uses sqlite, so the
+          #     affected code is never reached.
+          ignore: RUSTSEC-2026-0194,RUSTSEC-2026-0195,RUSTSEC-2023-0071
