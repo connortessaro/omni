@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useWindowResize } from "./useWindow";
 import { useGlobalShortcuts } from "@/hooks";
-import { MAX_FILES } from "@/config";
+import { MAX_FILES, STORAGE_KEYS } from "@/config";
 import { useApp } from "@/contexts";
 import {
   fetchAIResponse,
@@ -26,6 +26,8 @@ import {
   budgetOverflowNotice,
   runAgentLoopAsText,
   TOOLS,
+  CODE_PROFILE_ID,
+  safeLocalStorage,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -261,7 +263,12 @@ export const useCompletion = () => {
       // These four rewrite the turn into a request for code, so a prose sentence
       // cap on the answer is a request to truncate a diff. /fix, /explain,
       // /summarize and /translate are prose commands and are deliberately absent.
+      // Selecting the Code profile says the same thing about every turn.
+      const codeProfileActive =
+        safeLocalStorage.getItem(STORAGE_KEYS.SELECTED_SYSTEM_PROMPT_ID) ===
+        String(CODE_PROFILE_ID);
       const codeIntent =
+        codeProfileActive ||
         matches("/code") ||
         matches("/refactor") ||
         matches("/commit") ||

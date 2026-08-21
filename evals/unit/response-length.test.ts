@@ -152,3 +152,43 @@ test("a code turn keeps the language instruction", async () => {
     "the length cap must not survive a code turn"
   );
 });
+
+interface ConstantsModule {
+  CODING_SYSTEM_PROMPT: string;
+  DEFAULT_SYSTEM_PROMPT: string;
+}
+
+const { CODING_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT } =
+  await loadSrcModule<ConstantsModule>("config/constants.ts");
+
+test("the Code profile is a real coding prompt, not the default one", () => {
+  assert.notEqual(
+    CODING_SYSTEM_PROMPT,
+    DEFAULT_SYSTEM_PROMPT,
+    "the Code profile must not just repeat the generic assistant prompt"
+  );
+  // The generic prompt's own instruction to be concise is the thing that made a
+  // multi-file diff come back as a summary. A coding profile must not inherit it.
+  assert.ok(
+    !/\bconcise\b/i.test(CODING_SYSTEM_PROMPT),
+    "a coding prompt must not ask for concision"
+  );
+  assert.match(CODING_SYSTEM_PROMPT, /complete|runnable|full/i);
+});
+
+test("the Code profile is shipped as a selectable built-in", async () => {
+  interface BuiltinsModule {
+    BUILTIN_SYSTEM_PROMPTS: Array<{ id: number; name: string; prompt: string }>;
+    isBuiltinSystemPrompt(id: number): boolean;
+  }
+  const { BUILTIN_SYSTEM_PROMPTS, isBuiltinSystemPrompt } =
+    await loadSrcModule<BuiltinsModule>("lib/system-prompts.constants.ts");
+
+  const code = BUILTIN_SYSTEM_PROMPTS.find((p) => p.name === "Code");
+  assert.ok(code, "a built-in profile named Code must ship");
+  assert.equal(code.prompt, CODING_SYSTEM_PROMPT);
+  // Negative so it can never collide with a SQLite autoincrement rowid.
+  assert.ok(code.id < 0, "built-in ids must be negative");
+  assert.ok(isBuiltinSystemPrompt(code.id));
+  assert.ok(!isBuiltinSystemPrompt(1));
+});
