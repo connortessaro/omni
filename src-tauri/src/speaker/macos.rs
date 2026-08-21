@@ -12,12 +12,8 @@ use std::task::Poll;
 
 const UNAVAILABLE: &str = "system audio capture is not available in this build";
 
-pub fn get_input_devices() -> Result<Vec<AudioDevice>> {
-    Ok(Vec::new())
-}
-
 pub fn get_output_devices() -> Result<Vec<AudioDevice>> {
-    Ok(Vec::new())
+    Err(anyhow!(UNAVAILABLE))
 }
 
 pub struct SpeakerInput;
