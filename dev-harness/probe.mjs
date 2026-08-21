@@ -20,6 +20,21 @@ const HUD_WIDTH = 600;
 const HUD_RESTING_HEIGHT = 54;
 const PROMPT_PLACEHOLDER = "Ask anything or type /";
 
+/** Must match SLASH_MENU_ID in src/pages/app/components/completion/Input.tsx. */
+const SLASH_MENU_ID = "slash-command-menu";
+
+/** Seeded into localStorage so arrow-key recall has something to recall. */
+const SEEDED_PROMPT_HISTORY = [
+  "an earlier prompt that recall should reach",
+  "an older prompt behind it",
+];
+
+/**
+ * Headless WebKit refuses navigator.clipboard.readText without a user gesture, so
+ * the clipboard-peek assertions run against this stub on a page of their own.
+ */
+const STUB_CLIPBOARD = "a clipboard payload the peek bar should offer once";
+
 const results = [];
 const record = (name, pass, detail) => {
   results.push({ name, pass, detail });
@@ -77,6 +92,29 @@ const measure = (page) =>
     };
   });
 
+/**
+ * The slash menu's keyboard state read off the accessibility tree rather than off
+ * the styling, so the assertions hold even if the highlight is restyled.
+ */
+const readSlashMenu = (page) =>
+  page.evaluate((menuId) => {
+    const prompt = document.querySelector("textarea");
+    const list = document.getElementById(menuId);
+    const options = list
+      ? Array.from(list.querySelectorAll('[role="option"]'))
+      : [];
+    return {
+      open: Boolean(list),
+      options: options.map((option) => option.id),
+      selected: options
+        .filter((option) => option.getAttribute("aria-selected") === "true")
+        .map((option) => option.id),
+      activeDescendant: prompt?.getAttribute("aria-activedescendant") ?? null,
+      expanded: prompt?.getAttribute("aria-expanded") ?? null,
+      controls: prompt?.getAttribute("aria-controls") ?? null,
+    };
+  }, SLASH_MENU_ID);
+
 const run = async () => {
   mkdirSync(OUT, { recursive: true });
   const browser = await webkit.launch();
@@ -104,19 +142,34 @@ const run = async () => {
     }
   });
 
+  await context.addInitScript((history) => {
+    try {
+      localStorage.setItem("omni_prompt_history", JSON.stringify(history));
+    } catch {
+      // Same as above: no storage just means the recall assertion is the loss.
+    }
+  }, SEEDED_PROMPT_HISTORY);
+
   const page = await context.newPage();
   const consoleErrors = [];
   // The HUD probes Ollama on localhost:11434 to offer local models. When nothing
   // is listening the component handles it, but the browser still logs a failed
   // resource load, so that one endpoint is not treated as a defect.
   const OPTIONAL_ENDPOINTS = ["11434"];
-  page.on("console", (message) => {
-    if (message.type() !== "error") return;
-    const url = message.location()?.url ?? "";
-    if (OPTIONAL_ENDPOINTS.some((host) => url.includes(host))) return;
-    consoleErrors.push(`${message.text()} ${url}`.trim());
-  });
-  page.on("pageerror", (error) => consoleErrors.push(`pageerror: ${error.message}`));
+  // Named so the later single-purpose pages report faults into the same list.
+  const watchForErrors = (target, label = "") => {
+    const tag = label ? ` (${label})` : "";
+    target.on("console", (message) => {
+      if (message.type() !== "error") return;
+      const url = message.location()?.url ?? "";
+      if (OPTIONAL_ENDPOINTS.some((host) => url.includes(host))) return;
+      consoleErrors.push(`${message.text()}${tag} ${url}`.trim());
+    });
+    target.on("pageerror", (error) =>
+      consoleErrors.push(`pageerror${tag}: ${error.message}`)
+    );
+  };
+  watchForErrors(page);
 
   await page.goto(APP_URL, { waitUntil: "domcontentloaded" });
   const prompt = page.getByPlaceholder(PROMPT_PLACEHOLDER);
@@ -227,6 +280,146 @@ const run = async () => {
       withMenu.requestedWindowHeight >= withMenu.overlayBottomOverflow,
     `menu reaches ${withMenu.overlayBottomOverflow}px below the card top, window asked for ${withMenu.requestedWindowHeight}px`
   );
+
+  // 5b. the arrow keys have to reach the menu. useCompletion's handleKeyPress
+  // claims ArrowUp/ArrowDown for prompt-history recall, so ArrowDown over an open
+  // menu used to wipe the typed `/` and paste in a whole previous submission.
+  const menuAtRest = await readSlashMenu(page);
+  await page.keyboard.press("ArrowDown");
+  await page.waitForTimeout(150);
+  const menuAfterArrow = await readSlashMenu(page);
+  const promptAfterArrow = await prompt.inputValue();
+  await captureAt(page, withMenu.requestedWindowHeight, "4b-slash-menu-active-row.png");
+  record(
+    "ArrowDown moves the slash-menu selection without touching the prompt",
+    menuAtRest.selected.length === 1 &&
+      menuAfterArrow.selected.length === 1 &&
+      menuAfterArrow.selected[0] !== menuAtRest.selected[0] &&
+      menuAfterArrow.activeDescendant === menuAfterArrow.selected[0] &&
+      menuAfterArrow.controls === SLASH_MENU_ID &&
+      promptAfterArrow === "/co",
+    `selected ${menuAtRest.selected[0]} -> ${menuAfterArrow.selected[0]} ` +
+      `(${menuAfterArrow.selected.length} row(s) aria-selected of ${menuAfterArrow.options.length}), ` +
+      `aria-activedescendant=${menuAfterArrow.activeDescendant}, prompt still "${promptAfterArrow}"`
+  );
+
+  // 5c. Enter over an open menu accepts, it does not submit.
+  const highlightedCommand = `/${String(menuAfterArrow.selected[0]).replace(
+    "slash-command-",
+    ""
+  )}`;
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(200);
+  const promptAfterAccept = await prompt.inputValue();
+  const menuAfterAccept = await readSlashMenu(page);
+  record(
+    "Enter accepts the highlighted slash command",
+    promptAfterAccept === `${highlightedCommand} ` && !menuAfterAccept.open,
+    `prompt became "${promptAfterAccept}" (want "${highlightedCommand} "), menu still open=${menuAfterAccept.open}`
+  );
+
+  // 5d. Escape puts the menu away and leaves the typed text alone.
+  await prompt.fill("");
+  await prompt.click();
+  await prompt.pressSequentially("/");
+  await page.waitForTimeout(300);
+  const menuOnSlash = await readSlashMenu(page);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  const menuAfterEscape = await readSlashMenu(page);
+  const promptAfterEscape = await prompt.inputValue();
+  record(
+    "Escape dismisses the slash menu and keeps the typed text",
+    menuOnSlash.open &&
+      menuOnSlash.selected.length === 1 &&
+      !menuAfterEscape.open &&
+      menuAfterEscape.expanded === "false" &&
+      promptAfterEscape === "/",
+    `menu open=${menuOnSlash.open} -> ${menuAfterEscape.open}, ` +
+      `aria-expanded=${menuAfterEscape.expanded}, prompt still "${promptAfterEscape}"`
+  );
+
+  // 5e. an argument closes the menu. It used to match on the first token only, so
+  // the menu sat over the answer area for as long as the argument was being typed.
+  await prompt.fill("");
+  await prompt.click();
+  await prompt.pressSequentially("/fix hello");
+  await page.waitForTimeout(300);
+  const menuWithArgument = await readSlashMenu(page);
+  record(
+    "typing an argument closes the slash menu",
+    !menuWithArgument.open &&
+      menuWithArgument.expanded === "false" &&
+      menuWithArgument.activeDescendant === null,
+    `after "/fix hello": menu open=${menuWithArgument.open}, ` +
+      `aria-expanded=${menuWithArgument.expanded}, aria-activedescendant=${menuWithArgument.activeDescendant}`
+  );
+
+  // 5f. Backspace on an empty prompt takes the last attachment. Without it a
+  // paste chip has no keyboard route out, so clearing the prompt leaves a paste
+  // icon sitting there and the delete reads as having done nothing.
+  await prompt.fill("");
+  const seededChip = await page.evaluate(() => {
+    const target = document.querySelector("textarea");
+    if (!target) return false;
+    const text = Array.from(
+      { length: 40 },
+      (_, i) => `const seeded${i} = ${i}; // backspace seed line ${i}`
+    ).join("\n");
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: { items: [], getData: (type) => (type === "text/plain" ? text : "") },
+    });
+    target.dispatchEvent(event);
+    return true;
+  });
+  await page.waitForTimeout(300);
+  const chipsBeforeBackspace = (await measure(page)).chips;
+  await prompt.click();
+  await page.keyboard.press("Backspace");
+  await page.waitForTimeout(300);
+  const chipsAfterBackspace = (await measure(page)).chips;
+  record(
+    "Backspace on an empty prompt removes the last context chip",
+    seededChip &&
+      chipsBeforeBackspace > 0 &&
+      chipsAfterBackspace === chipsBeforeBackspace - 1,
+    `chips ${chipsBeforeBackspace} -> ${chipsAfterBackspace} after one Backspace on an empty prompt`
+  );
+
+  // 5g. the other half of 5b: with the menu closed the arrows must still belong to
+  // prompt-history recall. Setting a controlled value moves the caret to the end,
+  // and recall only fires from the ends, so the caret is placed explicitly.
+  const setCaret = (where) =>
+    page.evaluate((edge) => {
+      const field = document.querySelector("textarea");
+      if (!field) return;
+      const at = edge === "end" ? field.value.length : 0;
+      field.setSelectionRange(at, at);
+    }, where);
+
+  await prompt.fill("");
+  await prompt.click();
+  await setCaret("start");
+  await page.keyboard.press("ArrowUp");
+  await page.waitForTimeout(200);
+  const recalledOldest = await prompt.inputValue();
+  await setCaret("start");
+  await page.keyboard.press("ArrowUp");
+  await page.waitForTimeout(200);
+  const recalledNewer = await prompt.inputValue();
+  await setCaret("end");
+  await page.keyboard.press("ArrowDown");
+  await page.waitForTimeout(200);
+  const walkedBackDown = await prompt.inputValue();
+  record(
+    "prompt-history recall still owns the arrows when no menu is open",
+    recalledOldest === SEEDED_PROMPT_HISTORY[0] &&
+      recalledNewer === SEEDED_PROMPT_HISTORY[1] &&
+      walkedBackDown === SEEDED_PROMPT_HISTORY[0],
+    `ArrowUp "${recalledOldest}" then "${recalledNewer}", ArrowDown back to "${walkedBackDown}"`
+  );
+
   await prompt.fill("");
 
   // 6. the model switcher popover renders in a portal outside the HUD card, so
@@ -323,6 +516,90 @@ const run = async () => {
       shortAnswerHeight > HUD_RESTING_HEIGHT &&
       shortAnswerHeight < 600,
     `a short message asked for ${shortAnswerHeight}px (was a flat 600px)`
+  );
+
+  // 9. the clipboard peek must not re-arm when the prompt is emptied.
+  //
+  // Deleting a prompt used to re-read the clipboard and offer the just-deleted
+  // text straight back behind a paste icon, while the native window grew to fit
+  // the bar. To the user that is a delete key that undoes itself.
+  //
+  // On a page of its own: the stub has to be installed before the app mounts, and
+  // arming the peek on the shared page would have changed the requested window
+  // height that every earlier assertion measures.
+  await context.addInitScript((text) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: async () => text },
+    });
+  }, STUB_CLIPBOARD);
+
+  const peekPage = await context.newPage();
+  watchForErrors(peekPage, "peek");
+  await peekPage.setViewportSize({ width: HUD_WIDTH, height: 320 });
+  await peekPage.goto(APP_URL, { waitUntil: "domcontentloaded" });
+  const peekPrompt = peekPage.getByPlaceholder(PROMPT_PLACEHOLDER);
+  await peekPrompt.waitFor({ state: "visible", timeout: 15000 });
+  await peekPage.waitForTimeout(600);
+
+  const peekBar = peekPage.locator('[data-slot="clipboard-peek-dismiss"]');
+  const peekArmed = await peekBar.count();
+  const peekOverflows = await peekPage.evaluate(() => {
+    const dismiss = document.querySelector('[data-slot="clipboard-peek-dismiss"]');
+    const bar = dismiss?.closest("[data-hud-overlay]");
+    if (!bar) return null;
+    return {
+      scrollWidth: bar.scrollWidth,
+      clientWidth: bar.clientWidth,
+      dismissInside:
+        dismiss.getBoundingClientRect().right <=
+        bar.getBoundingClientRect().right + 0.5,
+    };
+  });
+  await peekPage.screenshot({ path: join(OUT, "7-clipboard-peek.png") });
+
+  await peekPrompt.click();
+  await peekPrompt.pressSequentially("typing over the peek declines it");
+  await peekPage.waitForTimeout(300);
+  const peekWhileTyped = await peekBar.count();
+  await peekPrompt.fill("");
+  await peekPage.waitForTimeout(600);
+  const peekAfterDelete = await peekBar.count();
+  record(
+    "emptying the prompt does not re-arm the clipboard peek",
+    peekArmed === 1 && peekWhileTyped === 0 && peekAfterDelete === 0,
+    `peek bar on summon=${peekArmed}, with text=${peekWhileTyped}, ` +
+      `after deleting the whole prompt=${peekAfterDelete}`
+  );
+  record(
+    "the peek bar keeps its dismiss control inside the bar",
+    peekOverflows !== null &&
+      peekOverflows.scrollWidth <= peekOverflows.clientWidth &&
+      peekOverflows.dismissInside,
+    peekOverflows
+      ? `bar scrollWidth=${peekOverflows.scrollWidth} clientWidth=${peekOverflows.clientWidth}, ` +
+        `dismiss inside=${peekOverflows.dismissInside}`
+      : "no peek bar found to measure"
+  );
+
+  // Escape is the keyboard route out of the bar. Fresh page, because the value
+  // above is now marked as already offered and will not be pushed twice.
+  const escapePage = await context.newPage();
+  watchForErrors(escapePage, "escape");
+  await escapePage.goto(APP_URL, { waitUntil: "domcontentloaded" });
+  const escapePrompt = escapePage.getByPlaceholder(PROMPT_PLACEHOLDER);
+  await escapePrompt.waitFor({ state: "visible", timeout: 15000 });
+  await escapePage.waitForTimeout(600);
+  const escapeBar = escapePage.locator('[data-slot="clipboard-peek-dismiss"]');
+  const barBeforeEscape = await escapeBar.count();
+  await escapePrompt.click();
+  await escapePrompt.press("Escape");
+  await escapePage.waitForTimeout(400);
+  const barAfterEscape = await escapeBar.count();
+  record(
+    "Escape dismisses the clipboard peek",
+    barBeforeEscape === 1 && barAfterEscape === 0,
+    `peek bar ${barBeforeEscape} -> ${barAfterEscape} after Escape`
   );
 
   record(
