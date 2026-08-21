@@ -7,7 +7,7 @@ interface ChatScreenshotProps {
   screenshotConfiguration: any;
   attachedFiles: any[];
   isLoading: boolean;
-  captureScreenshot: () => Promise<void>;
+  captureScreenshot: (forceRegion?: boolean) => Promise<void>;
   isScreenshotLoading: boolean;
   disabled: boolean;
 }
@@ -36,7 +36,7 @@ export const ChatScreenshot = ({
           ? "Screenshot not supported by current AI provider"
           : `${captureMode} mode (${processingMode}) - ${attachedFiles.length}/${MAX_FILES} files`
       }
-      onClick={captureScreenshot}
+      onClick={() => captureScreenshot()}
       disabled={
         attachedFiles.length >= MAX_FILES ||
         isLoading ||

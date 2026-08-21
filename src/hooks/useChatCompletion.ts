@@ -553,10 +553,13 @@ export const useChatCompletion = (
     [state.attachedFiles.length, addFile]
   );
 
-  const captureScreenshot = useCallback(async () => {
+  const captureScreenshot = useCallback(async (forceRegion = false) => {
     if (!handleScreenshotSubmit) return;
 
     const config = screenshotConfigRef.current;
+    // The region shortcut reaches the accurate path without a trip to Settings,
+    // so it overrides the saved mode instead of reading it.
+    const useFullScreen = config.enabled && !forceRegion;
 
     // Mark that this context initiated the screenshot
     screenshotInitiatedByThisContext.current = true;
@@ -597,7 +600,7 @@ export const useChatCompletion = (
         hasCheckedPermissionRef.current = true;
       }
 
-      if (config.enabled) {
+      if (useFullScreen) {
         const base64 = await invoke("capture_to_base64");
 
         if (config.mode === "auto") {
@@ -622,7 +625,7 @@ export const useChatCompletion = (
       isProcessingScreenshotRef.current = false;
       screenshotInitiatedByThisContext.current = false;
     } finally {
-      if (config.enabled) {
+      if (useFullScreen) {
         setIsScreenshotLoading(false);
       }
     }

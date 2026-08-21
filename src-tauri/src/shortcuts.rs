@@ -87,6 +87,7 @@ pub fn handle_shortcut_action<R: Runtime>(app: &AppHandle<R>, action_id: &str) {
         "move_window_right" => handle_move_window(app, "right"),
         "audio_recording" => handle_audio_shortcut(app),
         "screenshot" => handle_screenshot_shortcut(app),
+        "screenshot_region" => handle_screenshot_region_shortcut(app),
         "system_audio" => handle_system_audio_shortcut(app),
         custom_action => {
             // Emit custom action event for frontend to handle
@@ -272,6 +273,20 @@ fn handle_screenshot_shortcut<R: Runtime>(app: &AppHandle<R>) {
         // Emit event to trigger screenshot - frontend will determine auto/manual mode
         if let Err(e) = window.emit("trigger-screenshot", json!({})) {
             eprintln!("Failed to emit screenshot event: {}", e);
+        }
+    }
+}
+
+/// Handle region screenshot shortcut
+///
+/// Separate from `screenshot` because it ignores the saved capture mode. A
+/// whole-screen grab at native resolution is transcribed to roughly 60% and then
+/// stops with no error, so reaching the region path must not require a trip to
+/// Settings.
+fn handle_screenshot_region_shortcut<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(e) = window.emit("trigger-screenshot-region", json!({})) {
+            eprintln!("Failed to emit region screenshot event: {}", e);
         }
     }
 }
@@ -641,6 +656,7 @@ mod tests {
             "cmd+shift+d",
             "cmd+shift+i",
             "cmd+shift+s",
+            "cmd+shift+r",
             "cmd+shift+m",
             "cmd+shift+a",
             "cmd+up",

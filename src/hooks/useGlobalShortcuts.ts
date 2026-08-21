@@ -8,25 +8,50 @@ let globalEventListeners: {
   focus?: UnlistenFn;
   audio?: UnlistenFn;
   screenshot?: UnlistenFn;
+  screenshotRegion?: UnlistenFn;
   systemAudio?: UnlistenFn;
   customShortcut?: UnlistenFn;
   registrationError?: UnlistenFn;
 } = {};
 
-// Global debounce for screenshot events to prevent duplicates
+// Global debounce for screenshot events to prevent duplicates. The two capture
+// shortcuts debounce independently: pressing one must not swallow the other.
 let lastScreenshotEventTime = 0;
+let lastScreenshotRegionEventTime = 0;
 
 // Global callback refs
 let globalInputRef: HTMLTextAreaElement | null = null;
 let globalAudioCallback: (() => void) | null = null;
 let globalScreenshotCallback: (() => void | Promise<void>) | null = null;
+let globalScreenshotRegionCallback: (() => void | Promise<void>) | null = null;
 let globalSystemAudioCallback: (() => void) | null = null;
 let globalCustomShortcutCallbacks: Map<string, () => void> = new Map();
+
+/** Runs a capture callback without letting a rejection escape as unhandled. */
+const runCaptureCallback = (
+  label: string,
+  callback: (() => void | Promise<void>) | null
+) => {
+  if (!callback) {
+    console.warn(`${label} shortcut triggered but no callback registered.`);
+    return;
+  }
+  try {
+    Promise.resolve(callback()).catch((error) => {
+      console.error(`${label} shortcut callback failed:`, error);
+    });
+  } catch (error) {
+    console.error(`Failed to run ${label} shortcut callback:`, error);
+  }
+};
 
 export const useGlobalShortcuts = () => {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const audioCallbackRef = useRef<(() => void) | null>(null);
   const screenshotCallbackRef = useRef<(() => void) | null>(null);
+  const screenshotRegionCallbackRef = useRef<
+    (() => void | Promise<void>) | null
+  >(null);
   const systemAudioCallbackRef = useRef<(() => void) | null>(null);
   const customShortcutCallbacksRef = useRef<Map<string, () => void>>(new Map());
 
@@ -87,6 +112,15 @@ export const useGlobalShortcuts = () => {
     []
   );
 
+  // Register region screenshot callback
+  const registerScreenshotRegionCallback = useCallback(
+    (callback: () => void | Promise<void>) => {
+      screenshotRegionCallbackRef.current = callback;
+      globalScreenshotRegionCallback = callback;
+    },
+    []
+  );
+
   // Register system audio callback
   const registerSystemAudioCallback = useCallback((callback: () => void) => {
     systemAudioCallbackRef.current = callback;
@@ -132,6 +166,13 @@ export const useGlobalShortcuts = () => {
             globalEventListeners.screenshot();
           } catch (error) {
             console.warn("Error cleaning up screenshot listener:", error);
+          }
+        }
+        if (globalEventListeners.screenshotRegion) {
+          try {
+            globalEventListeners.screenshotRegion();
+          } catch (error) {
+            console.warn("Error cleaning up region screenshot listener:", error);
           }
         }
         if (globalEventListeners.systemAudio) {
@@ -188,29 +229,26 @@ export const useGlobalShortcuts = () => {
           }
 
           lastScreenshotEventTime = now;
-
-          if (globalScreenshotCallback) {
-            try {
-              Promise.resolve(globalScreenshotCallback())
-                .catch((error) => {
-                  console.error("Screenshot shortcut callback failed:", error);
-                })
-                .then(() => {
-                  // no-op
-                });
-            } catch (error) {
-              console.error(
-                "Failed to run screenshot shortcut callback:",
-                error
-              );
-            }
-          } else {
-            console.warn(
-              "Screenshot shortcut triggered but no callback registered."
-            );
-          }
+          runCaptureCallback("Screenshot", globalScreenshotCallback);
         });
         globalEventListeners.screenshot = unlistenScreenshot;
+
+        // Listen for the region capture trigger, which ignores the saved mode
+        const unlistenScreenshotRegion = await listen(
+          "trigger-screenshot-region",
+          () => {
+            const now = Date.now();
+            if (now - lastScreenshotRegionEventTime < 300) {
+              return;
+            }
+            lastScreenshotRegionEventTime = now;
+            runCaptureCallback(
+              "Region screenshot",
+              globalScreenshotRegionCallback
+            );
+          }
+        );
+        globalEventListeners.screenshotRegion = unlistenScreenshotRegion;
 
         // Listen for system audio toggle event
         const unlistenSystemAudio = await listen("toggle-system-audio", () => {
@@ -262,6 +300,7 @@ export const useGlobalShortcuts = () => {
     registerInputRef,
     registerAudioCallback,
     registerScreenshotCallback,
+    registerScreenshotRegionCallback,
     registerSystemAudioCallback,
     registerCustomShortcutCallback,
     unregisterCustomShortcutCallback,
