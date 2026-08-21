@@ -191,6 +191,36 @@ const run = async () => {
     `empty box scrollHeight=${resting.promptScrollHeight} clientHeight=${resting.promptClientHeight}`
   );
 
+  // 1c. a fresh profile defaults to region capture, not the whole screen.
+  //
+  // A full-screen capture at 2560x1600 is transcribed to about 60% and then
+  // stops, silently. Region capture is measured at 0-1.7% character error. The
+  // default that decides which one a new user gets used to be set by a one-time
+  // migration that never persisted, so the whole-screen path won on relaunch.
+  const captureDefault = await page.evaluate(() => {
+    const raw = localStorage.getItem("screenshot_config");
+    const button = document.querySelector('[data-slot="hud-screenshot"]');
+    return {
+      raw,
+      legacySentinel: localStorage.getItem("auto-configs-enabled"),
+      // useTitles moves `title` to `data-original-title` so the OS tooltip never
+      // draws over a stealth overlay, so match either. session.mjs does the same.
+      title:
+        button?.getAttribute("data-original-title") ??
+        button?.getAttribute("title") ??
+        null,
+    };
+  });
+  record(
+    "a fresh profile defaults to region capture",
+    captureDefault.title !== null &&
+      captureDefault.title.startsWith("Selection mode") &&
+      captureDefault.legacySentinel === null,
+    `title=${JSON.stringify(captureDefault.title)} ` +
+      `screenshot_config=${captureDefault.raw ?? "(unset)"} ` +
+      `auto-configs-enabled=${captureDefault.legacySentinel ?? "(absent)"}`
+  );
+
   // 2. growth on a wrapped second line
   await prompt.click();
   await prompt.pressSequentially("first line of a real problem statement");

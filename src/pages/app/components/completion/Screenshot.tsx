@@ -13,9 +13,8 @@ export const Screenshot = ({
 }: UseCompletionReturn) => {
   const { supportsImages } = useApp();
   const captureMode = screenshotConfiguration.enabled
-    ? "Screenshot"
-    : "Selection";
-  const processingMode = screenshotConfiguration.mode;
+    ? "Screenshot mode (whole screen)"
+    : "Selection mode (drag a region)";
 
   const isDisabled =
     attachedFiles.length >= MAX_FILES ||
@@ -27,12 +26,13 @@ export const Screenshot = ({
     <Button
       size="icon"
       className="cursor-pointer"
+      data-slot="hud-screenshot"
       title={
         !supportsImages
           ? "Screenshot not supported by current AI provider"
-          : `${captureMode} mode (${processingMode}) - ${attachedFiles.length}/${MAX_FILES} files`
+          : `${captureMode} - ${attachedFiles.length}/${MAX_FILES} files`
       }
-      onClick={captureScreenshot}
+      onClick={() => captureScreenshot()}
       disabled={isDisabled}
     >
       {isScreenshotLoading ? (
