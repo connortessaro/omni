@@ -37,8 +37,6 @@
     speech_pad_ms: 300,
   };
 
-  const AUDIO_DEVICES = [{ id: "mock-device", name: "Mock Audio Device" }];
-
   /**
    * Forwards a provider request through the proxy and streams the reply back over
    * the channel, mirroring src-tauri/src/provider.rs. TextDecoder in streaming
@@ -125,17 +123,34 @@
     start_screen_capture: () => null,
     capture_selected_area: () => null,
     close_overlay_window: () => null,
-    check_system_audio_access: () => true,
+    // System-audio capture has no working backend on macOS right now: the
+    // real implementation needs CoreAudio process taps via `cidre`, whose
+    // build script requires a full Xcode install, so
+    // src-tauri/src/speaker/macos.rs ships a stub where every entry point
+    // reports the feature unavailable instead of failing silently. This is
+    // not a mock bug: reporting "unavailable" here mirrors what production
+    // actually does today. Flipping it back to look functional is the exact
+    // failure this harness exists to catch (it is what let a fabricated
+    // waveform pass as a working capture pipeline before).
+    check_system_audio_access: () => false,
     request_system_audio_access: () => true,
     start_system_audio_capture: () => null,
     stop_system_audio_capture: () => null,
     manual_stop_continuous: () => null,
     get_vad_config: () => VAD_CONFIG,
     update_vad_config: () => null,
-    get_capture_status: () => ({ is_capturing: false }),
+    // Real command returns a bare bool (speaker/commands.rs get_capture_status),
+    // not an object.
+    get_capture_status: () => false,
     get_audio_sample_rate: () => 48000,
-    get_input_devices: () => AUDIO_DEVICES,
-    get_output_devices: () => AUDIO_DEVICES,
+    // Rejects, matching src-tauri/src/speaker/macos.rs get_output_devices. The
+    // macOS build cannot capture system audio at all: the real implementation
+    // needs CoreAudio process taps via cidre, which needs a full Xcode install.
+    // Resolving an empty list here would let the harness pass while the shipped
+    // app fails, which is the bug this mock previously hid.
+    get_output_devices: () => {
+      throw new Error("system audio capture is not available in this build");
+    },
 
     provider_request: providerRequest,
     provider_request_cancel: ({ requestId }) => {

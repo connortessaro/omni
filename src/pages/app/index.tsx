@@ -57,6 +57,12 @@ const App = () => {
           {systemAudio?.capturing ? (
             <div className="flex flex-row items-center gap-2 justify-between w-full">
               <div className="flex flex-1 items-center gap-2">
+                {/* No stream is available to pass here: system-audio capture
+                    is entirely native (src/hooks/useSystemAudio.ts talks to
+                    Tauri commands, never navigator.mediaDevices), so there is
+                    no browser-side MediaStream to visualize. AudioVisualizer
+                    renders its own honest "no signal" state for that case;
+                    it must not be handed a synthesized one. */}
                 <AudioVisualizer isRecording={systemAudio?.capturing} />
               </div>
               <div className="flex !w-fit items-center gap-2">
