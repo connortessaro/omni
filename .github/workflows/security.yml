@@ -20,13 +20,13 @@ jobs:
           node-version: 20
           cache: "npm"
 
-      # Reports without gating, on purpose: the current findings all need
-      # semver-major bumps (vite, and the @ricky0123/vad-* chain that carries
-      # onnxruntime-web), so removing `|| true` today would fail every PR on
-      # advisories nobody can fix in that PR. Drop the `|| true` once those are
-      # upgraded, so this actually blocks.
+      # Gates for real. The `|| true` this replaces was load-bearing only while
+      # the @ricky0123/vad-* chain pinned onnxruntime-web back and every finding
+      # needed a semver-major bump. That chain is upgraded and `npm audit` now
+      # reports zero, so a new high-severity advisory should fail the build
+      # rather than scroll past in a log.
       - name: NPM Security Audit
-        run: npm audit --audit-level=high || true
+        run: npm audit --audit-level=high
 
       - name: Rust Security Audit
         uses: rustsec/audit-check@v2.0.0
