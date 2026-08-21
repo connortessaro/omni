@@ -24,10 +24,28 @@ const AutoSpeechVADInternal = ({
   const { selectedSttProvider, allSttProviders } = useApp();
   const micStartAttemptedRef = useRef(false);
 
-  const audioConstraints: MediaTrackConstraints =
-    microphoneDeviceId && microphoneDeviceId !== "default"
-      ? { deviceId: microphoneDeviceId }
-      : {};
+  // vad-web 0.0.30 dropped `additionalAudioConstraints` for `getStream`, and
+  // calls it from start() instead of from MicVAD.new(), so mounting no longer
+  // grabs the microphone before the permission gate below has run. These are
+  // the library's own default constraints plus the selected device.
+  //
+  // The hook keys its setup effect on getStream.toString(), so this must stay a
+  // stable literal: the captured device id is not part of the source text, and
+  // the hook reads the latest closure through a ref.
+  const getStream = async () =>
+    navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        autoGainControl: true,
+        noiseSuppression: true,
+        // Plain, not `exact`: a stored id that no longer resolves should fall
+        // back to the default device rather than throw OverconstrainedError.
+        ...(microphoneDeviceId && microphoneDeviceId !== "default"
+          ? { deviceId: microphoneDeviceId }
+          : {}),
+      },
+    });
 
   const vad = useMicVAD({
     userSpeakingThreshold: 0.6,
@@ -35,7 +53,11 @@ const AutoSpeechVADInternal = ({
     baseAssetPath: "/vad/",
     onnxWASMBasePath: "/vad/",
     model: "legacy",
-    additionalAudioConstraints: audioConstraints,
+    getStream,
+    // pauseStream stops the tracks, so resuming needs a fresh stream. Without
+    // this it would come back on the default device, silently ignoring the
+    // user's selection after the first pause.
+    resumeStream: getStream,
     onSpeechEnd: async (audio) => {
       try {
         // convert float32array to blob
