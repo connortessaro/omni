@@ -4,7 +4,7 @@ title: Cut time-to-first-token on a HUD answer
 status: To Do
 assignee: []
 created_date: '2026-08-21 22:35'
-updated_date: '2026-08-21 22:40'
+updated_date: '2026-08-21 22:43'
 labels:
   - perf
   - hud
@@ -34,7 +34,7 @@ dev-harness/session.mjs already records time-to-first-text and bytes sent for a 
 Phase 1 done, client-side assembly ruled out by measurement.
 
 `node evals/scripts/latency-breakdown.ts` stubs fetch and times every step before
-the request leaves the process. Median of 10 runs, per case:
+the request leaves the process. Median of 10 runs:
 
 | case | base64 | total | buildMsgs | replacer | stringify |
 |---|---|---|---|---|---|
@@ -42,23 +42,46 @@ the request leaves the process. Median of 10 runs, per case:
 | region 1440x900 | 897KB | 1.37ms | 0.5ms | 0.08ms | 0.14ms |
 | full screen 2560x1600 | 557KB | 0.76ms | 0.24ms | 0.05ms | 0.07ms |
 
-The hypothesis going in was that `deepVariableReplacer` was the cost: it compiles a
-fresh RegExp per string per variable and runs a full scan, and by the time it runs
-`processUserMessageTemplate` has already inlined the base64 into the body. That is
-all true and it does not matter. It is 0.08ms on 897KB. Assembly is under 0.05% of
-a turn. Nothing on the JS side is worth optimising.
+The hypothesis going in was `deepVariableReplacer`: it compiles a fresh RegExp per
+string per variable and scans the whole string, and `processUserMessageTemplate`
+has already inlined the base64 into the body by the time it runs. All true, all
+irrelevant. It is 0.08ms on 897KB. Assembly is under 0.05% of a turn. Nothing on
+the JS side is worth optimising.
 
-So the budget is provider round trip and inference, and the one lever Omni controls
-is how many vision tokens it sends. That scales with pixel dimensions, not bytes:
-across 4 runs each, full screen ran ~4069ms against region ~3313ms while carrying
-the SMALLER base64 (557KB vs 897KB), because 2560x1600 is 4.1MP against 1.3MP.
-Defaulting to region capture in TASK-2 therefore already banked part of this.
+So the budget is provider round trip and inference, and the lever Omni controls is
+vision token count, which scales with PIXELS, not bytes. Across 4 graded runs each,
+full screen ran ~4069ms against region ~3313ms while carrying the SMALLER base64
+(557KB vs 897KB), because 2560x1600 is 4.1MP against 1.3MP.
 
-Still open, and why this stays To Do:
-- AC #1 is not met. Both numbers above are total response time from eval:run, not
-  TTFT. dev-harness/session.mjs already records time-to-first-text on the real HUD
-  path and is not wired to anything that gates.
-- Untested next lever: downscale a capture to a pixel budget before send, in
-  capture.rs rather than in TS, and measure whether accuracy survives it. The
-  region-vs-full-screen pair is the instrument for that.
+## Downscaling: latency win confirmed, accuracy NOT confirmed
+
+Tested whether scaling a full-screen capture down to a 1.3MP budget is free, by
+running the same fixture at both sizes through evals/scripts/vision-fidelity.ts.
+Three runs each, gemini-2.5-flash, truth is the committed .visible.txt:
+
+| pixels | latency (3 runs) | median | CER (3 runs) |
+|---|---|---|---|
+| 2560x1600 (4.1MP) | 8319, 7376, 16460 | 8319ms | 35.3%, 35.0%, 37.0% |
+| 1440x900 (1.3MP) | 4042, 3845, 2743 | 3845ms | 36.4%, 32.1%, 67.1% |
+
+Latency: downscaled won 3/3, median 2.2x faster. That result is solid.
+
+Accuracy: NOT established. Original CER is tight at 35-37%. Downscaled swings
+32-67%, and the bad run returned 946 chars against the usual ~1950, so it gave up
+early rather than misread. n=3 is too small to call that noise or regression.
+
+Note the ~35% CER at full screen is not a resolution limit, it is the truncation
+limit: both sizes read roughly 65% of the visible text and stop. Resolution was
+never the binding constraint, which is why halving it costs little.
+
+## Next, in order
+1. AC #1 is still unmet. Every number here is total response time. dev-harness/session.mjs
+   already records time-to-first-text on the real HUD path and gates nothing.
+2. Before shipping any downscale, get the accuracy question to n>=10 on the GRADED
+   tasks rather than transcribe-everything. Transcription CER is high-variance in
+   both arms because the failure mode is the model stopping early; the substring
+   graders were stable (region 4/4 PASS, full screen 4/4 FAIL).
+3. Only then consider a pixel budget in capture.rs. Region capture crops and
+   preserves text size; a budget scales and shrinks it. TASK-2 already banked the
+   crop, so the budget only protects the full-screen path and very large regions.
 <!-- SECTION:NOTES:END -->
