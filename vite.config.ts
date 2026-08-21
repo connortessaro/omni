@@ -34,11 +34,76 @@ const harnessMock = (): PluginOption => ({
   },
 });
 
+/**
+ * Serves the VAD model/runtime assets that @ricky0123/vad-web fetches at
+ * startup: the Silero ONNX model, its audio worklet, and the onnxruntime-web
+ * wasm binaries. Upstream defaults point these at jsdelivr
+ * (baseAssetPath/onnxWASMBasePath), and the app's CSP deliberately does not
+ * allow that host -- connect-src and script-src stay locked to 'self' rather
+ * than growing an allowlist for one dependency. So these ship from
+ * node_modules as same-origin static assets instead, at /vad/<basename> in
+ * dev and dist/vad/<basename> in the build, matching the baseAssetPath and
+ * onnxWASMBasePath set in AutoSpeechVad.tsx.
+ */
+const vadAssetSources = [
+  path.resolve(
+    __dirname,
+    "node_modules/@ricky0123/vad-web/dist/silero_vad_legacy.onnx"
+  ),
+  path.resolve(
+    __dirname,
+    "node_modules/@ricky0123/vad-web/dist/vad.worklet.bundle.min.js"
+  ),
+  path.resolve(
+    __dirname,
+    "node_modules/onnxruntime-web/dist/ort-wasm-simd.wasm"
+  ),
+  path.resolve(__dirname, "node_modules/onnxruntime-web/dist/ort-wasm.wasm"),
+];
+
+for (const source of vadAssetSources) {
+  if (!fs.existsSync(source)) {
+    throw new Error(`vadAssets: missing source file ${source}`);
+  }
+}
+
+const vadContentType = (filePath: string): string => {
+  if (filePath.endsWith(".wasm")) return "application/wasm";
+  if (filePath.endsWith(".js")) return "text/javascript";
+  return "application/octet-stream";
+};
+
+const vadAssets = (): PluginOption => ({
+  name: "omni-vad-assets",
+  configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+      const url = req.url ?? "";
+      if (!url.startsWith("/vad/")) return next();
+      const basename = url.slice("/vad/".length).split("?")[0];
+      const source = vadAssetSources.find(
+        (candidate) => path.basename(candidate) === basename
+      );
+      if (!source) return next();
+      res.setHeader("Content-Type", vadContentType(source));
+      res.end(fs.readFileSync(source));
+    });
+  },
+  generateBundle() {
+    for (const source of vadAssetSources) {
+      this.emitFile({
+        type: "asset",
+        fileName: `vad/${path.basename(source)}`,
+        source: fs.readFileSync(source),
+      });
+    }
+  },
+});
+
 // https://vite.dev/config/
 // Annotated rather than inferred: without the annotation the object literal is not
 // contextually typed and defineConfig fails to match any overload.
 const config: UserConfig = {
-  plugins: [harnessMock(), react(), tailwindcss()],
+  plugins: [harnessMock(), vadAssets(), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
