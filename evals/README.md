@@ -151,14 +151,24 @@ your account, set `OMNI_EVAL_MODEL` explicitly.
   follow-up turn; the other two paste-and-ask in one message — both of
   `buildDynamicMessages`'s branches (spreading prior `history` verbatim vs.
   templating the current turn) get exercised, not just one.
-- **Vision tasks are not automated.** There's no vision-capable key on this
-  machine and no fixture images are checked in. Each vision task's
-  `grader.gradingPath` describes exactly how it would be scored (fixture
-  screenshot with a known planted fact, graded with the same deterministic
-  substring approach where the fact is objective; an LLM-judge rubric only
-  for the genuinely subjective part, e.g. "is this a sensible CSS fix").
-  `eval:run` and `eval:dry-run` both print `SKIP`/`skipped: manual grader`
-  for these rather than guessing a score.
+- **Vision tasks are automated.** They were not, when this file first
+  described them: they carried `manual` graders that `run-eval.ts` skips, and
+  `runTaskAgainstOmni` never passed `imagesBase64`, so the vision path shipped
+  with no executed coverage at all. They now use real fixtures checked in under
+  `evals/fixtures/vision/`, captured from psf/requests open in VS Code for the
+  web by `dev-harness/ide-capture.mjs`, which records the on-screen DOM text
+  next to each PNG as ground truth. Grading is the same deterministic
+  `substring` approach as everywhere else, on strings that are in the fixture
+  and are not guessable from the prompt: vendored urllib3 import paths and the
+  file's own constant names.
+- **Two of them are a controlled pair, not duplicates.**
+  `vision-full-screen-capture-tail` and `vision-region-capture-tail` ask the
+  same shape of question about the bottom of the same file, at the two
+  resolutions Omni's two capture modes actually produce. That pair is the
+  measurement the capture default rests on, so it is meant to stay
+  asymmetric: the full-screen one is a documented known failure and will keep
+  the suite below its pass bar until models improve. That is the signal, not a
+  regression.
 
 ## Every task's expected answer is verified against a real solution
 
@@ -209,6 +219,20 @@ provider (Google's OpenAI-compatible endpoint):
 | long-context | 4/4 |
 | vision | 3 skipped, no fixtures |
 | **automated total** | **24/24** |
+
+Vision re-run, 2026-08-21, same provider, after the fixtures and graders landed
+and `capture_to_base64` stopped being the default capture path:
+
+| task | result | latency |
+|---|---|---|
+| vision-region-capture-tail | PASS | 3664ms |
+| vision-full-screen-capture-tail | FAIL, `missing: DEFAULT_POOLSIZE` | 6156ms |
+
+That is the whole argument for defaulting to region capture, in two lines: asked
+the same shape of question about the bottom of the same file, the model answers
+it from a 1440x900 region and does not answer it from a 2560x1600 full screen.
+The full-screen capture is also the slower of the two, so the larger image buys
+nothing. Neither number is a regression to chase; the pair is the instrument.
 
 Read that number with suspicion rather than satisfaction. **A suite that scores
 100% on its first run has no headroom**, so it cannot currently distinguish a

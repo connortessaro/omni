@@ -74,4 +74,36 @@ export const visionTasks: Task[] = [
       "that the rest went unread. This task asks about content near the bottom on " +
       "purpose, so that failure shows up as a failure instead of a shorter answer.",
   },
+  {
+    id: "vision-region-capture-tail",
+    category: "vision",
+    title: "Read the bottom of a region capture",
+    prompt:
+      "This is a screenshot of a 1440x900 region with a Python file open in an " +
+      "editor. Name the last class defined in the visible file and quote its " +
+      "docstring exactly as written, then name the last module-level constant " +
+      "defined above that class. Answer from the screenshot only.",
+    imageFixtures: ["evals/fixtures/vision/vscode-web-adapters-2x.png"],
+    grader: {
+      type: "substring",
+      expectedAll: [
+        "BaseAdapter",
+        "The Base Transport Adapter",
+        "DEFAULT_POOL_TIMEOUT",
+      ],
+      caseSensitive: true,
+    },
+    knownWeakness:
+      "None measured. This is the counterpart to vision-full-screen-capture-tail " +
+      "and the capture mode the app now defaults to: the same shape of question, " +
+      "the same file, at the resolution a dragged region produces, where " +
+      "transcription measures 0-1.7% character error instead of stopping at about " +
+      "60%. It cannot ask the identical question, because the answer the " +
+      "full-screen task grades on sits below this region's last visible line. " +
+      "It is also narrower on purpose than vision-read-code-from-browser-ide, " +
+      "which grades a full transcription of the same fixture: a model can lose " +
+      "that one for being terse while still reading the tail, and only this pair " +
+      "separates capture size from verbosity. If this one starts failing too, the " +
+      "problem is not the capture size.",
+  },
 ];
