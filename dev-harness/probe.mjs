@@ -712,6 +712,51 @@ const run = async () => {
       `text=${JSON.stringify(hint.text)}`
   );
 
+  // 11. a long code line scrolls; it does not wrap into a fake newline.
+  //
+  // `white-space: pre-wrap` on the pre meant the overflow-x: auto above it never
+  // engaged, so a wrapped continuation row began at the gutter's left edge with
+  // no hanging indent. In a 600px HUD that is most real lines, and the reader
+  // cannot tell a wrap from a newline in code they are about to copy. Tables
+  // already scrolled, because nothing overrides their white-space.
+  //
+  // Measured against a code block built in the live document rather than a real
+  // answer: the response panel needs a provider and a network call, and what
+  // broke here was the shipped stylesheet at the shipped width in WebKit.
+  const codeWrap = await page.evaluate(() => {
+    const host = document.createElement("div");
+    host.setAttribute("data-streamdown", "code-block");
+    const pre = document.createElement("pre");
+    pre.setAttribute("data-streamdown", "code-block-body");
+    pre.className = "p-4 text-sm";
+    const code = document.createElement("code");
+    code.textContent =
+      "const x = someFunction(argumentOne, argumentTwo, argumentThree, argumentFour, argumentFive);";
+    pre.appendChild(code);
+    host.appendChild(pre);
+    document.body.appendChild(host);
+    const style = getComputedStyle(pre);
+    const measured = {
+      whiteSpace: style.whiteSpace,
+      overflowX: style.overflowX,
+      scrolls: pre.scrollWidth > pre.clientWidth + 0.5,
+      scrollWidth: pre.scrollWidth,
+      clientWidth: pre.clientWidth,
+      lineBoxes: code.getClientRects().length,
+    };
+    host.remove();
+    return measured;
+  });
+  record(
+    "a long code line scrolls instead of wrapping",
+    codeWrap.whiteSpace === "pre" &&
+      codeWrap.scrolls &&
+      codeWrap.lineBoxes === 1,
+    `white-space=${codeWrap.whiteSpace} overflow-x=${codeWrap.overflowX} ` +
+      `scrollWidth=${codeWrap.scrollWidth} clientWidth=${codeWrap.clientWidth} ` +
+      `lineBoxes=${codeWrap.lineBoxes} (want 1)`
+  );
+
   record(
     "no console errors",
     consoleErrors.length === 0,

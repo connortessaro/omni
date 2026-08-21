@@ -205,12 +205,18 @@ body {
   overflow-x: auto !important;
 }
 
+/* Code scrolls, it does not wrap. `pre-wrap` here meant the overflow-x above
+   never engaged, and a wrapped continuation row started at the gutter's left
+   edge with no hanging indent, so it read as a real newline in code the user is
+   about to copy. The HUD is 600px, so that was most lines. Tables in the rule
+   above already behave this way, because nothing overrides their white-space.
+   `word-wrap: break-word` is dropped rather than kept: it cannot fire under
+   `white-space: pre`, and leaving it here invites the wrap back. */
 [data-streamdown="code-block"] pre,
 [data-streamdown="code-block"] code {
   max-width: 100% !important;
   overflow-x: auto !important;
-  word-wrap: break-word !important;
-  white-space: pre-wrap !important;
+  white-space: pre !important;
 }
 
 /* Omni Tailwind v4 Utilities */
