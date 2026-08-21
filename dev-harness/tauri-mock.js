@@ -123,16 +123,14 @@
     start_screen_capture: () => null,
     capture_selected_area: () => null,
     close_overlay_window: () => null,
-    // System-audio capture has no working backend on macOS right now: the
-    // real implementation needs CoreAudio process taps via `cidre`, whose
-    // build script requires a full Xcode install, so
-    // src-tauri/src/speaker/macos.rs ships a stub where every entry point
-    // reports the feature unavailable instead of failing silently. This is
-    // not a mock bug: reporting "unavailable" here mirrors what production
-    // actually does today. Flipping it back to look functional is the exact
-    // failure this harness exists to catch (it is what let a fabricated
-    // waveform pass as a working capture pipeline before).
-    check_system_audio_access: () => false,
+    // macOS captures system audio through ScreenCaptureKit
+    // (src-tauri/src/speaker/macos.rs), which authorizes against Screen
+    // Recording. This mirrors the granted path, because that is the state the
+    // layout probe needs to exercise. The denied path is a rejection from
+    // get_output_devices, not an empty list: resolving empty is what let a
+    // fabricated waveform pass as a working pipeline before, so keep these two
+    // honest against the Rust side whenever it changes.
+    check_system_audio_access: () => true,
     request_system_audio_access: () => true,
     start_system_audio_capture: () => null,
     stop_system_audio_capture: () => null,
@@ -143,14 +141,12 @@
     // not an object.
     get_capture_status: () => false,
     get_audio_sample_rate: () => 48000,
-    // Rejects, matching src-tauri/src/speaker/macos.rs get_output_devices. The
-    // macOS build cannot capture system audio at all: the real implementation
-    // needs CoreAudio process taps via cidre, which needs a full Xcode install.
-    // Resolving an empty list here would let the harness pass while the shipped
-    // app fails, which is the bug this mock previously hid.
-    get_output_devices: () => {
-      throw new Error("system audio capture is not available in this build");
-    },
+    // One entry, matching src-tauri/src/speaker/macos.rs: ScreenCaptureKit taps
+    // the whole output mix and has no per-device selection, so a longer list
+    // would be a dropdown whose entries all did the same thing.
+    get_output_devices: () => [
+      { id: "system-mix", name: "System audio (all output)", is_default: true },
+    ],
 
     provider_request: providerRequest,
     provider_request_cancel: ({ requestId }) => {

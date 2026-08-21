@@ -333,13 +333,13 @@ export const AudioSelection = () => {
         <div className="space-y-3">
           {outputLoadFailed ? (
             <div className="text-xs text-amber-500 bg-amber-500/10 p-3 rounded-md">
-              {isMacOS() ? (
-                "System audio capture isn't available in this build on macOS. Microphone input works normally."
-              ) : (
-                <>
-                  <strong>⚠️ Couldn't load output devices.</strong>{" "}
-                  {outputError}
-                </>
+              <strong>⚠️ Couldn't load output devices.</strong> {outputError}
+              {isMacOS() && (
+                <span className="mt-1 block">
+                  macOS captures system audio through Screen Recording. Turn
+                  Omni on in System Settings, Privacy &amp; Security, Screen
+                  &amp; System Audio Recording, then restart Omni.
+                </span>
               )}
             </div>
           ) : (
