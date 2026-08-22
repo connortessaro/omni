@@ -1,7 +1,7 @@
 {
   "name": "omni",
   "private": true,
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Local-first AI assistant for the desktop. Bring your own provider key.",
   "author": "Connor Tessaro",
   "license": "Apache-2.0",
@@ -14,6 +14,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:build:signed": "zsh scripts/build-signed.sh",
+    "signing:create": "zsh scripts/create-signing-identity.sh",
+    "privacy:reset": "zsh scripts/reset-privacy-grants.sh",
     "eval:typecheck": "tsc -p evals/tsconfig.json",
     "eval:test": "node --test evals/graders/*.test.ts evals/unit/*.test.ts",
     "eval:dry-run": "node evals/scripts/dry-run.ts",

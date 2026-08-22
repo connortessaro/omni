@@ -72,6 +72,39 @@ npm run tauri build
 # Bundle located at: src-tauri/target/release/bundle/macos/Omni.app
 ```
 
+### macOS: keeping privacy permissions across rebuilds
+
+`npm run tauri build` signs ad-hoc, which produces no certificate. macOS then
+pins each privacy grant to the binary's cdhash, and a cdhash changes on every
+build. Omni keeps appearing under **Privacy & Security** with its toggle **on**
+while macOS denies screen capture and audio, and because the entry already
+exists you never see a new prompt.
+
+Sign with a stable local certificate instead, once per machine:
+
+```bash
+npm run signing:create        # self-signed identity in its own keychain
+npm run tauri:build:signed    # build with it
+```
+
+The designated requirement then names the certificate rather than the binary:
+
+```
+identifier "com.connortessaro.omni" and certificate root = H"…"
+```
+
+That holds across rebuilds, so you grant permissions once. Clear the stale ones
+after the first signed build:
+
+```bash
+npm run privacy:reset         # macOS prompts again on next launch
+```
+
+`scripts/build-signed.sh` passes the identity through `APPLE_SIGNING_IDENTITY`
+rather than `tauri.conf.json`. That config is committed, and the release workflow
+builds on GitHub runners without this certificate, so hardcoding it there would
+break every CI release build.
+
 ---
 
 ## 📄 License
