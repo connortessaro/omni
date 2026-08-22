@@ -242,6 +242,7 @@ const arm = async (page, label, options) => {
   const of = (key) => median(runs.map((r) => r[key]));
   const summary = {
     label,
+    runs,
     assembly: of("assembly"),
     provider: of("provider"),
     render: of("render"),
@@ -261,7 +262,9 @@ const arm = async (page, label, options) => {
       `  TTFT            ${round(summary.ttft)}ms   submit -> first paint\n` +
       `  ours            ${round(summary.assembly + summary.render)}ms   assembly + render\n` +
       `  stream lasted   ${round(summary.streamDuration)}ms   first chunk -> last chunk\n` +
-      `  paint vs end    ${round(summary.paintAfterStreamEnd)}ms   negative means it streamed\n`
+      `  paint vs end    ${round(summary.paintAfterStreamEnd)}ms   negative means it streamed\n` +
+      `  (each row is its own median, so the segments need not add to TTFT here;\n` +
+      `   the identity is checked per run)\n`
   );
 
   return summary;
@@ -335,11 +338,34 @@ const main = async () => {
       `over a ${round(plain.streamDuration)}ms stream`
   );
 
-  const attributable = plain.assembly + plain.provider + plain.render;
+  // Checked per run, not against the medians. Each median is taken over its own
+  // segment independently, so medians from different runs do not have to add up:
+  // on a fast machine they agreed within 2ms and on a shared runner they did
+  // not, which failed this assertion for no real reason. Per run the identity is
+  // exact, and what it actually guards is a mark going missing, which is how the
+  // NaN in paintAfterStreamEnd showed up.
+  const allRuns = [...plain.runs, ...image.runs];
+  const worstResidual = Math.max(
+    ...allRuns.map((r) =>
+      Math.abs(r.ttft - (r.assembly + r.provider + r.render))
+    )
+  );
+  const marksSane = allRuns.every(
+    (r) =>
+      [r.assembly, r.provider, r.render, r.ttft, r.streamDuration].every(
+        (v) => Number.isFinite(v)
+      ) &&
+      r.assembly >= 0 &&
+      r.provider > 0 &&
+      r.render >= 0
+  );
+
   record(
-    "the three segments account for TTFT",
-    Math.abs(attributable - plain.ttft) < 5,
-    `segments sum to ${round(attributable)}ms against a measured ${round(plain.ttft)}ms`
+    "every mark is present and the segments account for TTFT in each run",
+    marksSane && worstResidual < 0.001,
+    marksSane
+      ? `worst residual ${worstResidual}ms across ${allRuns.length} runs`
+      : "a segment was missing or negative, so a performance mark never landed"
   );
 
   record(
