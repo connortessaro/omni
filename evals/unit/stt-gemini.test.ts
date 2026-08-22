@@ -1,7 +1,13 @@
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadSrcModule } from "../harness/loadSrcModule.ts";
 import { installFileReader } from "../harness/fakeGlobals.ts";
+import { lastRequest, replyWith, reset } from "./stubs/transport.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const TRANSPORT_STUB = join(HERE, "stubs", "transport.ts");
 
 // Why this exists.
 //
@@ -43,7 +49,8 @@ interface SttConstantsModule {
 installFileReader();
 
 const { fetchSTT } = await loadSrcModule<SttModule>(
-  "lib/functions/stt.function.ts"
+  "lib/functions/stt.function.ts",
+  { transport: TRANSPORT_STUB }
 );
 const { SPEECH_TO_TEXT_PROVIDERS } = await loadSrcModule<SttConstantsModule>(
   "config/stt.constants.ts"
@@ -63,49 +70,46 @@ interface Captured {
   body: Record<string, any>;
 }
 
-/** Runs fetchSTT against a stubbed network and returns what it assembled. */
+beforeEach(() => reset());
+
+/** Runs fetchSTT against the recording transport and returns what it assembled. */
 async function transcribe(
   audio: Blob,
   responseBody = transcriptResponse("hello there")
 ): Promise<{ result: string; sent: Captured }> {
   assert.ok(gemini, "the gemini-stt provider must be registered");
+  replyWith(responseBody);
 
-  let sent: Captured | undefined;
-  const original = globalThis.fetch;
-  globalThis.fetch = (async (url: string, init: RequestInit) => {
-    sent = {
-      url: String(url),
-      headers: (init.headers ?? {}) as Record<string, string>,
-      body: JSON.parse(String(init.body)),
-    };
-    return new Response(responseBody, { status: 200 });
-  }) as typeof fetch;
+  const result = await fetchSTT({
+    provider: gemini,
+    selectedProvider: {
+      provider: "gemini-stt",
+      variables: { api_key: "test-key", model: "gemini-2.5-flash" },
+    },
+    audio,
+  });
 
-  try {
-    const result = await fetchSTT({
-      provider: gemini,
-      selectedProvider: {
-        provider: "gemini-stt",
-        variables: { api_key: "test-key", model: "gemini-2.5-flash" },
-      },
-      audio,
-    });
-    assert.ok(sent, "fetchSTT must have issued a request");
-    return { result, sent };
-  } finally {
-    globalThis.fetch = original;
-  }
+  const request = lastRequest();
+  assert.ok(request, "fetchSTT must have issued a request");
+  return {
+    result,
+    sent: {
+      url: request.url,
+      headers: request.headers,
+      body: JSON.parse(request.body ?? "{}"),
+    },
+  };
 }
 
 test("the model and key land in the URL and headers, not the body", async () => {
   const { sent } = await transcribe(new Blob(["fake-wav"], { type: "audio/wav" }));
 
   assert.match(sent.url, /models\/gemini-2\.5-flash:generateContent/);
-  assert.equal(sent.headers["x-goog-api-key"], "test-key");
+  assert.equal(sent.headers["x-goog-api-key"], "{{OMNI_SECRET:API_KEY}}");
   assert.doesNotMatch(
-    JSON.stringify(sent.body),
+    JSON.stringify(sent),
     /test-key/,
-    "the key must not be duplicated into the request body"
+    "the key must never be in the request, in the header or the body"
   );
 });
 

@@ -3,7 +3,12 @@ import {
   getByPath,
   blobToBase64,
 } from "./common.function";
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import {
+  isSecretVariable,
+  secretPlaceholder,
+  streamProviderRequest,
+  type RequestUpload,
+} from "./transport";
 
 import { TYPE_PROVIDER } from "@/types";
 import curl2Json from "@bany/curl-to-json";
@@ -73,15 +78,14 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     //   warnings.push("Audio exceeds 10MB limit");
     // }
 
-    // Build variable map
-    const allVariables = {
-      ...Object.fromEntries(
-        Object.entries(selectedProvider.variables).map(([key, value]) => [
-          key.toUpperCase(),
-          value,
-        ])
-      ),
-    };
+    // A credential is replaced by a placeholder, not its value: Rust
+    // substitutes the real one at send time, so nothing here ever holds a key.
+    const allVariables: Record<string, string> = Object.fromEntries(
+      Object.entries(selectedProvider.variables).map(([key, value]) => [
+        key.toUpperCase(),
+        isSecretVariable(key) ? secretPlaceholder(key.toUpperCase()) : value,
+      ])
+    );
 
     // Prepare request.
     //
@@ -119,65 +123,64 @@ export async function fetchSTT(params: STTParams): Promise<string> {
       url += (url.includes("?") ? "&" : "?") + queryString;
     }
 
-    let finalHeaders = { ...headers };
-    let body: FormData | string | Blob;
+    const finalHeaders: Record<string, string> = { ...headers };
+    let body: string | undefined;
+    let upload: RequestUpload | undefined;
+
+    const fileName = getAudioFileName(audio.type);
+    const mimeType = audio.type.split(";")[0].trim().toLowerCase();
 
     const isForm =
       provider.curl.includes("-F ") || provider.curl.includes("--form");
+
     if (isForm) {
-      const form = new FormData();
-      const freshBlob = new Blob([await audio.arrayBuffer()], {
-        type: audio.type,
-      });
-      form.append("file", freshBlob, getAudioFileName(audio.type));
-      const headerKeys = Object.keys(headers).map((k) =>
-        k.toUpperCase().replace(/[-_]/g, "")
-      );
-
-      for (const [key, val] of Object.entries(formData)) {
-        if (typeof val !== "string") {
-          if (
-            !val ||
-            headerKeys.includes(key.toUpperCase()) ||
-            key.toUpperCase() === "AUDIO"
-          )
-            continue;
-          form.append(key.toLowerCase(), val as string | Blob);
-          continue;
-        }
-
-        // Check if key is a number, which indicates array-like parsing from curl2json
-        if (!isNaN(parseInt(key, 10))) {
-          const [formKey, ...formValueParts] = val.split("=");
-          const formValue = formValueParts.join("=");
-
-          if (formKey.toLowerCase() === "file") continue; // Already handled by form.append('file', audio)
-
-          if (
-            !formValue ||
-            headerKeys.includes(formKey.toUpperCase().replace(/[-_]/g, ""))
-          )
-            continue;
-
-          form.append(formKey, formValue);
+      // curl2Json returns -F entries either keyed by name or, when the flag was
+      // unquoted, as numbered "name=value" strings.
+      const entries: [string, string][] = [];
+      for (const [key, value] of Object.entries(formData)) {
+        if (typeof value !== "string") continue;
+        if (/^\d+$/.test(key)) {
+          const [name, ...rest] = value.split("=");
+          entries.push([name, rest.join("=")]);
         } else {
-          if (key.toLowerCase() === "file") continue; // Already handled by form.append('file', audio)
-          if (
-            !val ||
-            headerKeys.includes(key.toUpperCase()) ||
-            key.toUpperCase() === "AUDIO"
-          )
-            continue;
-          form.append(key.toLowerCase(), val as string | Blob);
+          entries.push([key, value]);
         }
       }
+
+      // The field the audio belongs in is whichever one the template pointed at
+      // {{AUDIO}}. Hardcoding "file" uploads under a name speechmatics and
+      // rev.ai ignore, and their error reads like a missing file.
+      const audioEntry = entries.find(([, value]) => value.includes("{{AUDIO}}"));
+      const headerNames = new Set(
+        Object.keys(headers).map((name) =>
+          name.toUpperCase().replace(/[-_]/g, "")
+        )
+      );
+
+      const fields = Object.fromEntries(
+        entries.filter(
+          ([name, value]) =>
+            name !== audioEntry?.[0] &&
+            value &&
+            !headerNames.has(name.toUpperCase().replace(/[-_]/g, ""))
+        )
+      );
+
+      upload = {
+        dataBase64: await blobToBase64(audio),
+        field: audioEntry?.[0] ?? "file",
+        fileName,
+        mimeType,
+        fields,
+      };
+      // Rust owns Content-Type for multipart: it holds the boundary.
       delete finalHeaders["Content-Type"];
-      body = form;
     } else if (isBinaryUpload) {
-      // Deepgram-style: raw binary body
-      body = new Blob([await audio.arrayBuffer()], {
-        type: audio.type,
-      });
+      upload = {
+        dataBase64: await blobToBase64(audio),
+        fileName,
+        mimeType,
+      };
     } else {
       // Google-style: JSON payload with base64
       allVariables.AUDIO = await blobToBase64(audio);
@@ -185,44 +188,27 @@ export async function fetchSTT(params: STTParams): Promise<string> {
       // The two recorders disagree — system audio is WAV, the mic goes through
       // WKWebView's MediaRecorder and comes out audio/mp4 — so a template
       // cannot hardcode it.
-      allVariables.MIME = audio.type.split(";")[0].trim().toLowerCase();
+      allVariables.MIME = mimeType;
       const dataObj = curlJson.data ? { ...curlJson.data } : {};
       body = JSON.stringify(deepVariableReplacer(dataObj, allVariables));
     }
 
     // Always the Rust client, never the webview's fetch: it bypasses CORS (most
-    // provider APIs send no CORS headers) and it keeps the webview with no
-    // outbound network at all, so injected script has nowhere to send a key.
-    const fetchFunction = tauriFetch;
-
-    // Send request
-    let response: Response;
-    try {
-      response = await fetchFunction(url, {
-        method: curlJson.method || "POST",
-        headers: finalHeaders,
-        body: curlJson.method === "GET" ? undefined : body,
-      });
-    } catch (e) {
-      throw new Error(`Network error: ${e instanceof Error ? e.message : e}`);
+    // provider APIs send no CORS headers) and it keeps the credential in the OS
+    // credential store, so injected script has nothing to read and nowhere to
+    // send it.
+    const method = (curlJson.method || "POST").toUpperCase();
+    let responseText = "";
+    for await (const chunk of streamProviderRequest({
+      providerId: selectedProvider.provider,
+      url,
+      method,
+      headers: finalHeaders,
+      body: method === "GET" ? undefined : body,
+      upload: method === "GET" ? undefined : upload,
+    })) {
+      responseText += chunk;
     }
-
-    if (!response.ok) {
-      let errText = "";
-      try {
-        errText = await response.text();
-      } catch {}
-      let errMsg: string;
-      try {
-        const errObj = JSON.parse(errText);
-        errMsg = errObj.message || errText;
-      } catch {
-        errMsg = errText || response.statusText;
-      }
-      throw new Error(`HTTP ${response.status}: ${errMsg}`);
-    }
-
-    const responseText = await response.text();
     let data: any;
     try {
       data = JSON.parse(responseText);
