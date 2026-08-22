@@ -28,6 +28,11 @@ jobs:
       # invoke() of an unregistered command only fails at runtime.
       - name: Tauri command parity
         run: npm run check:commands
+      # A credential in localStorage sits in a mode 644 file any process running
+      # as the user can read. One careless setItem reopens that, and no
+      # typecheck notices.
+      - name: Secrets stay out of localStorage
+        run: npm run check:secrets
       # These test files are TypeScript executed directly by node, which needs
       # Node 22.18+. On Node 20 every one of them fails to load.
       - name: Unit tests
@@ -85,6 +90,52 @@ jobs:
           path: |
             dev-harness/out/
             vite-dev.log
+          if-no-files-found: warn
+
+  check-secret-field:
+    name: Dev Space Credential Field (WebKit)
+    timeout-minutes: 15
+    # macOS for the same reason as the layout probe: WebKit, no apt-get.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Cache WebKit
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-webkit-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install WebKit
+        timeout-minutes: 6
+        run: npx playwright install webkit
+      # The harness server, not the plain one: the probe needs the Tauri mock to
+      # answer secret_store, secret_delete and secret_exists.
+      - name: Start harness dev server
+        run: |
+          nohup npm run dev:harness > vite-harness.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:1420/ >/dev/null && exit 0
+            sleep 1
+          done
+          echo "harness dev server never came up"
+          cat vite-harness.log
+          exit 1
+      # check:secrets proves no code writes a credential; this proves the running
+      # app does not, including that it deletes a copy already on disk.
+      - name: Probe the credential field
+        run: npm run secret:probe
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-field-logs
+          path: vite-harness.log
           if-no-files-found: warn
 
   check-ttft:
