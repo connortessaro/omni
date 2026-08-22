@@ -1,10 +1,10 @@
 ---
 id: TASK-5
 title: Cut time-to-first-token on a HUD answer
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-21 22:35'
-updated_date: '2026-08-21 22:43'
+updated_date: '2026-08-22 03:35'
 labels:
   - perf
   - hud
@@ -23,9 +23,9 @@ dev-harness/session.mjs already records time-to-first-text and bytes sent for a 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 TTFT is measured separately from total response time, on the real HUD path
-- [ ] #2 The measurement attributes time to image payload, request assembly, and provider round trip
-- [ ] #3 A regression in TTFT is catchable without a paid eval run
+- [x] #1 TTFT is measured separately from total response time, on the real HUD path
+- [x] #2 The measurement attributes time to image payload, request assembly, and provider round trip
+- [x] #3 A regression in TTFT is catchable without a paid eval run
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -74,14 +74,52 @@ Note the ~35% CER at full screen is not a resolution limit, it is the truncation
 limit: both sizes read roughly 65% of the visible text and stop. Resolution was
 never the binding constraint, which is why halving it costs little.
 
+## Phase 2: TTFT measured and gated. Omni's share is ~9%.
+
+`npm run ttft:probe` (dev-harness/ttft-probe.mjs) measures the real HUD path in
+WebKit against a scripted provider: dev-harness/tauri-mock.js now honours
+`window.__HARNESS_STREAM__` and emits canned SSE chunks on a fixed schedule, so
+round-trip time is a known constant and no credential or paid call is involved.
+Everything is marked in-page with performance.now(). Medians of 5 runs after a
+discarded warm-up:
+
+| segment | no attachment | 688KB PNG |
+|---|---|---|
+| assembly (submit -> request) | 2ms | 14ms |
+| provider (scripted round trip) | 301ms | 301ms |
+| render (first chunk -> first paint) | 23ms | 24ms |
+| **TTFT (submit -> first paint)** | **328ms** | **341ms** |
+| Omni's own share | 25ms | 38ms |
+
+The three segments sum to TTFT within 2ms, so nothing is unaccounted for.
+
+Conclusions:
+- The app contributes roughly 25-38ms of a ~330ms TTFT. Everything else is the
+  provider. This closes the question Phase 1 opened: it is not just assembly that
+  is cheap, the whole client path is.
+- The image payload costs ~12ms of assembly and ~13ms of TTFT for 899KB. Not a
+  TTFT lever.
+- The HUD does stream: the first character paints ~683ms before the last chunk
+  over a 708ms stream. A regression to render-on-complete would show as ~700ms.
+
+Instrument note worth keeping: the chunk cadence was 2ms at first, a 500/sec
+firehose no provider produces, and the render segment swung 193-740ms across
+identical runs because first paint was contending with hundreds of queued React
+updates. At a realistic 25ms cadence it is a stable 23-25ms. Measuring TTFT
+against a synthetic flood measures the flood.
+
+The gate is not vacuous: at the 2ms cadence it failed the render budget and
+exited 1. It runs in CI as "HUD Time-to-First-Token".
+
 ## Next, in order
-1. AC #1 is still unmet. Every number here is total response time. dev-harness/session.mjs
-   already records time-to-first-text on the real HUD path and gates nothing.
-2. Before shipping any downscale, get the accuracy question to n>=10 on the GRADED
+1. Before shipping any downscale, get the accuracy question to n>=10 on the GRADED
    tasks rather than transcribe-everything. Transcription CER is high-variance in
    both arms because the failure mode is the model stopping early; the substring
-   graders were stable (region 4/4 PASS, full screen 4/4 FAIL).
-3. Only then consider a pixel budget in capture.rs. Region capture crops and
+   graders were stable (region 4/4 PASS, full screen 4/4 FAIL). This one costs
+   money.
+2. Only then consider a pixel budget in capture.rs. Region capture crops and
    preserves text size; a budget scales and shrinks it. TASK-2 already banked the
    crop, so the budget only protects the full-screen path and very large regions.
+   Note the measurement above: a pixel budget buys provider inference time, not
+   client time, so it is worth doing for the right reason.
 <!-- SECTION:NOTES:END -->

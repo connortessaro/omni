@@ -87,6 +87,51 @@ jobs:
             vite-dev.log
           if-no-files-found: warn
 
+  check-ttft:
+    name: HUD Time-to-First-Token
+    timeout-minutes: 15
+    # macOS for the same reason as the layout probe: WebKit, no apt-get.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "npm"
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Cache WebKit
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-webkit-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install WebKit
+        timeout-minutes: 6
+        run: npx playwright install webkit
+      # dev:harness, not dev: this probe drives the scripted provider in
+      # dev-harness/tauri-mock.js, which is only injected when OMNI_HARNESS=1.
+      # No credential is involved, which is the point of measuring this way.
+      - name: Start harness dev server
+        run: |
+          nohup npm run dev:harness > vite-harness.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:1420/ >/dev/null && exit 0
+            sleep 1
+          done
+          echo "dev server never came up"
+          cat vite-harness.log
+          exit 1
+      - name: Measure TTFT
+        run: npm run ttft:probe
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ttft-logs
+          path: vite-harness.log
+          if-no-files-found: warn
+
   check-rust:
     name: Rust Backend Check & Tests
     timeout-minutes: 25
