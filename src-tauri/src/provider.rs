@@ -16,7 +16,11 @@ use crate::secrets::{inject_secrets_for, origin_of};
 /// OS credential store here, so a key never crosses the IPC boundary and script
 /// running in the webview has nothing to steal.
 
+// Field names match what the frontend sends. Tauri converts a command's own
+// argument names to snake_case, but a nested struct is plain serde, so this
+// rename is what keeps `requestId` from arriving as a missing field.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderRequest {
     pub request_id: String,
     pub provider_id: String,
@@ -220,6 +224,30 @@ pub fn provider_request_cancel(request_id: String, cancelled: State<'_, Cancelle
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_request_deserializes_from_what_the_frontend_sends() {
+        // transport.ts builds this object. Tauri converts a command's own
+        // argument names to snake_case but leaves nested fields to serde, so
+        // without a rename every provider request fails before it is sent with
+        // "invalid args `request` for command `provider_request`: missing field
+        // `request_id`". No JS stand-in catches it: the harness mock, the dev
+        // proxy and the eval transport all read the camelCase keys directly.
+        let payload = serde_json::json!({
+            "requestId": "preq_1",
+            "providerId": "openai",
+            "url": "https://api.openai.com/v1/chat/completions",
+            "method": "POST",
+            "headers": { "content-type": "application/json" },
+            "body": "{\"model\":\"gpt-4o\"}"
+        });
+
+        let request: ProviderRequest =
+            serde_json::from_value(payload).expect("the frontend payload must deserialize");
+
+        assert_eq!(request.request_id, "preq_1");
+        assert_eq!(request.provider_id, "openai");
+    }
 
     #[test]
     fn complete_utf8_is_taken_whole() {
