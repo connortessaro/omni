@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
-import { secretExists } from "@/lib";
+import { secretExists, SECRETS_CHANGED_EVENT } from "@/lib";
 
 /**
  * A provider credential, as much of it as the webview is allowed to know: it
@@ -30,6 +30,11 @@ export const useProviderSecret = (
 
   useEffect(() => {
     void refresh();
+    // The startup migration can store a key while this is already mounted, and
+    // a boolean read once would keep reporting it as missing.
+    const onChanged = () => void refresh();
+    window.addEventListener(SECRETS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(SECRETS_CHANGED_EVENT, onChanged);
   }, [refresh]);
 
   const save = useCallback(

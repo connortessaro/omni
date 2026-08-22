@@ -12,6 +12,9 @@ import { isSecretVariable } from "./transport";
  * that needs the plaintext copy.
  */
 
+/** Fired when the credential store changed, so a cached "configured" can refresh. */
+export const SECRETS_CHANGED_EVENT = "omni:secrets-changed";
+
 interface ProviderLike {
   id?: string;
   curl?: string;
@@ -97,6 +100,14 @@ export const migrateProviderSecrets = async (
       // never accepted would lose it.
       console.error(`Could not migrate ${upperName} to the credential store:`, error);
     }
+  }
+
+  // Anything showing configured state read a boolean once and has no way to
+  // learn that this just changed it. Dev space can be open while the migration
+  // lands, and it would otherwise keep reporting a configured key as missing
+  // until it remounted.
+  if (stored.length > 0 && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SECRETS_CHANGED_EVENT));
   }
 
   return stored;
