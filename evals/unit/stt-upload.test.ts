@@ -159,6 +159,27 @@ test("no template's request carries the literal key, in any shape", async () => 
   }
 });
 
+test("the placeholder ships even when the variables map holds no secret", async () => {
+  // The end state after the migration: the map carries configuration only. If
+  // the placeholder were seeded from the map rather than from the template, the
+  // literal {{API_KEY}} would go out and the provider would answer 401.
+  replyWith({ text: "still authenticated" });
+  const text = await fetchSTT({
+    provider: providerNamed("openai-whisper"),
+    selectedProvider: {
+      provider: "openai-whisper",
+      variables: { model: "whisper-1" },
+    },
+    audio: audio(),
+  });
+
+  assert.equal(text, "still authenticated");
+  assert.equal(
+    lastRequest()?.headers.Authorization,
+    "Bearer {{OMNI_SECRET:API_KEY}}"
+  );
+});
+
 test("the request is attributed to the provider so Rust finds the right account", async () => {
   await transcribe("openai-whisper", { text: "x" });
   assert.equal(lastRequest()?.providerId, "openai-whisper");

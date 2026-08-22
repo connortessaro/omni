@@ -17,9 +17,12 @@ const injectSecrets = (text) => {
   return text.replace(/\{\{OMNI_SECRET:[A-Za-z0-9_]+\}\}/g, secret);
 };
 
-// A live run has a key in the environment; a dry run does not and does not need
-// one, because nothing it talks to checks.
-export const secretExists = async () => Boolean(process.env.OMNI_EVAL_API_KEY);
+// This transport is the harness's credential store, and it always has something
+// to substitute: OMNI_EVAL_API_KEY when a live run set one, an empty string
+// otherwise. Gating on that variable instead would make every request-assembly
+// test depend on an unrelated environment variable to get past a pre-flight
+// check that is not what those tests are about.
+export const secretExists = async () => true;
 
 // Rust assembles multipart from the base64 upload; here fetch does, so the same
 // description has to be turned into a body it understands.

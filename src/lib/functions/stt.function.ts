@@ -1,5 +1,6 @@
 import {
   deepVariableReplacer,
+  extractVariables,
   getByPath,
   blobToBase64,
 } from "./common.function";
@@ -80,12 +81,28 @@ export async function fetchSTT(params: STTParams): Promise<string> {
 
     // A credential is replaced by a placeholder, not its value: Rust
     // substitutes the real one at send time, so nothing here ever holds a key.
-    const allVariables: Record<string, string> = Object.fromEntries(
-      Object.entries(selectedProvider.variables).map(([key, value]) => [
-        key.toUpperCase(),
-        isSecretVariable(key) ? secretPlaceholder(key.toUpperCase()) : value,
-      ])
-    );
+    //
+    // The placeholder comes from what the template declares, not from what the
+    // variables map happens to hold, because the map no longer holds a secret at
+    // all. Seeding it only from the map leaves the literal `{{API_KEY}}` in the
+    // header, Rust finds no placeholder to substitute, and the provider answers
+    // 401 in a way that reads like a bad key.
+    const allVariables: Record<string, string> = {
+      ...Object.fromEntries(
+        extractVariables(provider.curl)
+          .filter(({ key }) => isSecretVariable(key))
+          .map(({ key }) => [
+            key.toUpperCase(),
+            secretPlaceholder(key.toUpperCase()),
+          ])
+      ),
+      ...Object.fromEntries(
+        Object.entries(selectedProvider.variables).map(([key, value]) => [
+          key.toUpperCase(),
+          isSecretVariable(key) ? secretPlaceholder(key.toUpperCase()) : value,
+        ])
+      ),
+    };
 
     // Prepare request.
     //
