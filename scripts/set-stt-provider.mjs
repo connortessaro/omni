@@ -11,6 +11,18 @@
 // ~/.config/omni/eval.env (mode 600, the same file the eval runner uses), so it
 // stays out of shell history and out of this script's output.
 //
+// The credential does NOT go into localStorage. It goes to the login keychain,
+// under the account layout src-tauri/src/secrets.rs reads: service
+// "com.connortessaro.omni", account "{providerId}/API_KEY", and a value wrapped
+// with the origin it may be sent to. Writing it into localStorage would replant
+// the mode 644 plaintext copy the app now deletes on startup, so running this
+// script would quietly undo the migration.
+//
+// One tradeoff worth naming: `security` takes the value as an argument, so it is
+// visible in `ps` for the length of that call. That is the same user as the
+// keychain ACL already trusts, and it is momentary rather than a file left on
+// disk, which is what this replaces.
+//
 // Usage:
 //   node scripts/set-stt-provider.mjs --provider gemini-stt --model gemini-2.5-flash
 //   node scripts/set-stt-provider.mjs --show
@@ -23,8 +35,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadSrcModule } from "../evals/harness/loadSrcModule.ts";
 
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BUNDLE_ID = "com.connortessaro.omni";
 const STORAGE_KEY = "curl_selected_stt_provider";
 const ENV_FILE =
@@ -42,13 +54,59 @@ const fail = (message) => {
   process.exit(1);
 };
 
-/** Provider ids the app actually ships, read from the real constants file. */
-const knownProviderIds = () => {
-  const source = readFileSync(
-    join(REPO_ROOT, "src/config/stt.constants.ts"),
-    "utf8"
+// The app's own constants and its own endpoint derivation, so the origin this
+// binds a key to is the one the request path will compute at send time. A
+// second implementation here would bind to something subtly different and the
+// request would be refused with a message that reads like a bad key.
+const { SPEECH_TO_TEXT_PROVIDERS } = await loadSrcModule(
+  "config/stt.constants.ts"
+);
+const { endpointFor } = await loadSrcModule("lib/functions/secret-migration.ts");
+
+/**
+ * Writes a credential where the app reads it. keyring-rs stores a generic
+ * password keyed by service and account, and secrets.rs wraps the value with
+ * the origin it may be sent to, so the row has to carry that same JSON.
+ *
+ * The ACL is left alone on purpose. `-A` would let any process read the item
+ * without a prompt, which is the protection this whole migration exists to
+ * gain, and `-T <app>` asks for keychain authorization through a GUI dialog and
+ * hangs a script. So the item gets the default ACL, and the first time Omni
+ * reads it macOS asks once; answer "Always Allow".
+ */
+const storeSecret = (providerId, name, value, endpoint) => {
+  const { protocol, hostname, port } = new URL(endpoint);
+  const origin = port
+    ? `${protocol}//${hostname}:${port}`
+    : `${protocol}//${hostname}`;
+
+  const account = `${providerId}/${name}`;
+  execFileSync("security", [
+    "add-generic-password",
+    "-U",
+    "-s",
+    BUNDLE_ID,
+    "-a",
+    account,
+    "-w",
+    JSON.stringify({ value, origin }),
+  ]);
+
+  const readback = JSON.parse(
+    execFileSync(
+      "security",
+      ["find-generic-password", "-s", BUNDLE_ID, "-a", account, "-w"],
+      { encoding: "utf8" }
+    ).trim()
   );
-  return [...source.matchAll(/^\s*id:\s*"([^"]+)"/gm)].map((m) => m[1]);
+
+  if (readback.value !== value || readback.origin !== origin) {
+    fail(
+      `The keychain did not take ${account}; the app would report a missing key.`
+    );
+  }
+
+  return origin;
 };
 
 /** Parses KEY=VALUE lines, ignoring blanks, comments and surrounding quotes. */
@@ -116,9 +174,11 @@ if (showOnly) {
     process.exit(0);
   }
   const parsed = JSON.parse(Buffer.from(hex, "hex").toString("utf16le"));
-  // The variables map holds the credential, so only its shape is reported.
   console.log(`provider: ${parsed.provider}`);
-  console.log(`variables: ${Object.keys(parsed.variables ?? {}).join(", ")}`);
+  console.log(
+    `variables: ${Object.keys(parsed.variables ?? {}).join(", ")} ` +
+      `(no credential; that is in the keychain)`
+  );
   process.exit(0);
 }
 
@@ -128,8 +188,9 @@ if (!provider || !model) {
   fail("Usage: --provider <id> --model <name>   (or --show)");
 }
 
-const known = knownProviderIds();
-if (!known.includes(provider)) {
+const known = SPEECH_TO_TEXT_PROVIDERS.map((p) => p.id);
+const entry = SPEECH_TO_TEXT_PROVIDERS.find((p) => p.id === provider);
+if (!entry) {
   fail(
     `Unknown provider "${provider}". src/config/stt.constants.ts ships: ${known.join(", ")}`
   );
@@ -150,9 +211,19 @@ if (!apiKey) {
   );
 }
 
+const endpoint = endpointFor(entry.curl, { MODEL: model });
+if (!endpoint) {
+  fail(
+    `Could not derive an endpoint from the ${provider} template, so there is ` +
+      `nowhere to bind the key.`
+  );
+}
+const origin = storeSecret(provider, "API_KEY", apiKey, endpoint);
+console.log(`Stored API_KEY for ${provider}, bound to ${origin}.`);
+
 const value = JSON.stringify({
   provider,
-  variables: { api_key: apiKey, model },
+  variables: { model },
 });
 const hex = Buffer.from(value, "utf16le").toString("hex");
 
@@ -171,6 +242,12 @@ const readback = JSON.parse(
 
 if (readback.provider !== provider || readback.variables.model !== model) {
   fail("Write did not read back as expected.");
+}
+if (/key|token|secret|password|credential/i.test(JSON.stringify(readback))) {
+  fail(
+    "A secret-named variable reached localStorage. That is the mode 644 " +
+      "plaintext copy this script exists to avoid."
+  );
 }
 
 console.log(`Selected ${provider} (model ${model}) with the key from ${ENV_FILE}.`);
