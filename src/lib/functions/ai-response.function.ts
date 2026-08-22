@@ -9,6 +9,7 @@ import { Message, TYPE_PROVIDER } from "@/types";
 import curl2Json from "@bany/curl-to-json";
 import {
   isSecretVariable,
+  secretExists,
   secretPlaceholder,
   streamProviderRequest,
 } from "./transport";
@@ -140,6 +141,17 @@ export async function* fetchAIResponse(params: {
       ({ key }) => key !== "SYSTEM_PROMPT" && key !== "TEXT" && key !== "IMAGE"
     );
     for (const { key } of requiredVars) {
+      // A credential is not in the variables map any more; it lives in the OS
+      // credential store, so its presence is a question for Rust.
+      if (isSecretVariable(key)) {
+        if (
+          !(await secretExists(selectedProvider.provider, key.toUpperCase()))
+        ) {
+          throw new Error(`Missing ${key.toUpperCase()}. Add it in Dev space.`);
+        }
+        continue;
+      }
+
       if (
         !selectedProvider.variables?.[key] ||
         selectedProvider.variables[key].trim() === ""
@@ -178,7 +190,21 @@ export async function* fetchAIResponse(params: {
 
     // A credential is replaced by a placeholder, not its value: Rust substitutes
     // the real one at send time, so nothing here ever holds a key.
+    //
+    // The placeholder comes from what the template declares, not from what the
+    // variables map happens to hold, because the map no longer holds a secret at
+    // all. Seeding it only from the map leaves the literal `{{API_KEY}}` in the
+    // header, Rust finds no placeholder to substitute, and the provider answers
+    // 401 in a way that reads like a bad key.
     const allVariables = {
+      ...Object.fromEntries(
+        extractedVariables
+          .filter(({ key }) => isSecretVariable(key))
+          .map(({ key }) => [
+            key.toUpperCase(),
+            secretPlaceholder(key.toUpperCase()),
+          ])
+      ),
       ...Object.fromEntries(
         Object.entries(selectedProvider.variables).map(([key, value]) => [
           key.toUpperCase(),

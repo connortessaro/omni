@@ -26,8 +26,10 @@
     "csp:probe": "node dev-harness/csp-probe.mjs",
     "audio:indicator-probe": "zsh dev-harness/indicator-probe.sh",
     "check:commands": "node scripts/check-commands.mjs",
+    "check:secrets": "node scripts/check-secret-storage.mjs",
     "verify:models": "node scripts/verify-model-listing.mjs",
-    "verify:agent": "node scripts/verify-agent-loop.mjs"
+    "verify:agent": "node scripts/verify-agent-loop.mjs",
+    "secret:probe": "node dev-harness/secret-field-probe.mjs"
   },
   "dependencies": {
     "@bany/curl-to-json": "^1.2.8",

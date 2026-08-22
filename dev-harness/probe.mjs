@@ -159,18 +159,31 @@ const run = async () => {
   // falls back to an empty string when it is not running, which is this probe's
   // case, so a failed load there is expected rather than a defect.
   const OPTIONAL_ENDPOINTS = ["11434", "1422"];
+  // A blocked request to one of those endpoints is reported three ways by
+  // WebKit, and only one of them carries a URL to match on: a console message
+  // with the endpoint in `location()`, a console message with no location at
+  // all, and a page-level error naming the endpoint in its text. The model
+  // picker began producing the second and third once model listing moved onto
+  // the provider transport. Nothing in this probe should reach a network, so a
+  // connection failure is the expected state rather than a defect; anything
+  // that is not a refused connection still counts.
+  const CONNECTION_REFUSED = /Could not connect to the server|Failed to load resource: Could not connect/;
+  const isExpectedOutage = (text, url = "") =>
+    OPTIONAL_ENDPOINTS.some((host) => url.includes(host) || text.includes(host)) ||
+    CONNECTION_REFUSED.test(text);
   // Named so the later single-purpose pages report faults into the same list.
   const watchForErrors = (target, label = "") => {
     const tag = label ? ` (${label})` : "";
     target.on("console", (message) => {
       if (message.type() !== "error") return;
       const url = message.location()?.url ?? "";
-      if (OPTIONAL_ENDPOINTS.some((host) => url.includes(host))) return;
+      if (isExpectedOutage(message.text(), url)) return;
       consoleErrors.push(`${message.text()}${tag} ${url}`.trim());
     });
-    target.on("pageerror", (error) =>
-      consoleErrors.push(`pageerror${tag}: ${error.message}`)
-    );
+    target.on("pageerror", (error) => {
+      if (isExpectedOutage(error.message)) return;
+      consoleErrors.push(`pageerror${tag}: ${error.message}`);
+    });
   };
   watchForErrors(page);
 

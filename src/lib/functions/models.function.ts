@@ -1,14 +1,22 @@
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import curl2Json from "@bany/curl-to-json";
 import { deepVariableReplacer } from "./common.function";
+import {
+  isSecretVariable,
+  secretExists,
+  secretPlaceholder,
+  streamProviderRequest,
+} from "./transport";
 
 /**
  * Lists the models a provider will serve for the key already configured, so a
  * model can be switched without re-entering credentials.
  *
- * Requests go through the Tauri HTTP plugin rather than the webview's fetch:
- * most provider APIs send no CORS headers, so a webview fetch can issue the
- * request but never read the response.
+ * Requests go through the provider transport, not the webview's fetch: it
+ * bypasses CORS (most provider APIs send no CORS headers) and, more
+ * importantly, it means the credential stays in the OS credential store. This
+ * path sends `{{OMNI_SECRET:API_KEY}}` and Rust substitutes the real value, but
+ * only for the origin that secret is bound to — which is why every entry in
+ * MODEL_LIST_SOURCES has to sit on the same origin as its chat endpoint.
  */
 
 type AuthStyle = "bearer" | "x-api-key" | "none";
@@ -27,7 +35,7 @@ interface ModelListSource {
 
 const OPENAI_SHAPE = { arrayKey: "data", idKey: "id" } as const;
 
-const MODEL_LIST_SOURCES: Record<string, ModelListSource> = {
+export const MODEL_LIST_SOURCES: Record<string, ModelListSource> = {
   openai: { url: "https://api.openai.com/v1/models", auth: "bearer", ...OPENAI_SHAPE },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/openai/models",
@@ -108,10 +116,19 @@ const deriveSourceFromCurl = (
   curl: string,
   variables: Record<string, string>
 ): ModelListSource | null => {
+  // A custom provider can authenticate in the query string, so the derived URL
+  // has to carry a placeholder rather than the value.
+  const safeVariables = Object.fromEntries(
+    Object.entries(variables).map(([name, value]) => [
+      name.toUpperCase(),
+      isSecretVariable(name) ? secretPlaceholder(name.toUpperCase()) : value,
+    ])
+  );
+
   let url: string;
   try {
     const parsed = curl2Json(curl);
-    url = deepVariableReplacer(parsed.url ?? "", variables) as string;
+    url = deepVariableReplacer(parsed.url ?? "", safeVariables) as string;
   } catch {
     return null;
   }
@@ -130,15 +147,14 @@ const deriveSourceFromCurl = (
 
 const buildHeaders = (
   source: ModelListSource,
-  apiKey: string
+  needsCredential: boolean
 ): Record<string, string> => {
   const headers: Record<string, string> = { ...source.headers };
-  if (source.auth === "bearer" && apiKey) {
-    headers.Authorization = `Bearer ${apiKey}`;
-  }
-  if (source.auth === "x-api-key" && apiKey) {
-    headers["x-api-key"] = apiKey;
-  }
+  if (!needsCredential) return headers;
+
+  const placeholder = secretPlaceholder("API_KEY");
+  if (source.auth === "bearer") headers.Authorization = `Bearer ${placeholder}`;
+  if (source.auth === "x-api-key") headers["x-api-key"] = placeholder;
   return headers;
 };
 
@@ -184,27 +200,32 @@ export async function listModels({
     );
   }
 
-  const apiKey = variables.API_KEY ?? variables.api_key ?? "";
-  if (source.auth !== "none" && !apiKey) {
+  const needsCredential = source.auth !== "none";
+  if (needsCredential && !(await secretExists(providerId, "API_KEY"))) {
     throw new Error("Add an API key for this provider first.");
   }
 
-  const response = await tauriFetch(source.url, {
+  let raw = "";
+  for await (const chunk of streamProviderRequest({
+    providerId,
+    url: source.url,
     method: "GET",
-    headers: buildHeaders(source, apiKey),
+    headers: buildHeaders(source, needsCredential),
     signal,
-  });
+  })) {
+    raw += chunk;
+  }
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
+  let payload: unknown;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
     throw new Error(
-      `${providerId} refused the model list (${response.status})${
-        detail ? `: ${detail.slice(0, 160)}` : ""
-      }`
+      `${providerId} returned a model list that is not JSON: ${raw.slice(0, 160)}`
     );
   }
 
-  const ids = readIds(await response.json(), source);
+  const ids = readIds(payload, source);
   if (ids.length === 0) {
     throw new Error(`${providerId} returned no models.`);
   }

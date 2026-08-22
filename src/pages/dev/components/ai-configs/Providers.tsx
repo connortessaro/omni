@@ -1,9 +1,10 @@
-import { Button, Header, Input, Selection, TextInput } from "@/components";
+import { Button, Header, Selection, TextInput } from "@/components";
+import { endpointFor, isSecretVariable } from "@/lib";
 import { UseSettingsReturn } from "@/types";
 import curl2Json, { ResultJSON } from "@bany/curl-to-json";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { KeyIcon, TrashIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ApiKeyField } from "../ApiKeyField";
 
 export const Providers = ({
   allAiProviders,
@@ -57,15 +58,18 @@ export const Providers = ({
     return variables?.find((v) => v?.key === key);
   };
 
-  const getApiKeyValue = () => {
-    const apiKeyVar = findKeyAndValue("api_key");
-    if (!apiKeyVar || !selectedAIProvider?.variables) return "";
-    return selectedAIProvider?.variables?.[apiKeyVar.key] || "";
-  };
+  const activeProvider = allAiProviders?.find(
+    (p) => p?.id === selectedAIProvider?.provider
+  );
 
-  const isApiKeyEmpty = () => {
-    return !getApiKeyValue().trim();
-  };
+  // The endpoint a key gets bound to has to be derived without the key in it,
+  // or providers that authenticate in the query string would bind to an origin
+  // containing their own credential.
+  const nonSecretVariables = Object.fromEntries(
+    Object.entries(selectedAIProvider?.variables ?? {})
+      .filter(([name]) => !isSecretVariable(name))
+      .map(([name, value]) => [name.toUpperCase(), value])
+  );
 
   return (
     <div className="space-y-3">
@@ -105,100 +109,20 @@ export const Providers = ({
         />
       ) : null}
 
-      {findKeyAndValue("api_key") ? (
-        <div className="space-y-2">
-          <Header
-            title="API Key"
-            description={`Enter your ${
-              allAiProviders?.find(
-                (p) => p?.id === selectedAIProvider?.provider
-              )?.isCustom
-                ? "Custom Provider"
-                : selectedAIProvider?.provider
-            } API key to authenticate and access AI models. Your key is stored locally and never shared.`}
-          />
-
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                placeholder="**********"
-                value={getApiKeyValue()}
-                onChange={(value) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedAIProvider) return;
-
-                  onSetSelectedAIProvider({
-                    ...selectedAIProvider,
-                    variables: {
-                      ...selectedAIProvider.variables,
-                      [apiKeyVar.key]:
-                        typeof value === "string" ? value : value.target.value,
-                    },
-                  });
-                }}
-                onKeyDown={(e) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedAIProvider) return;
-
-                  onSetSelectedAIProvider({
-                    ...selectedAIProvider,
-                    variables: {
-                      ...selectedAIProvider.variables,
-                      [apiKeyVar.key]: (e.target as HTMLInputElement).value,
-                    },
-                  });
-                }}
-                disabled={false}
-                className="flex-1 h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
-              />
-              {isApiKeyEmpty() ? (
-                <Button
-                  onClick={() => {
-                    const apiKeyVar = findKeyAndValue("api_key");
-                    if (!apiKeyVar || !selectedAIProvider || isApiKeyEmpty())
-                      return;
-
-                    onSetSelectedAIProvider({
-                      ...selectedAIProvider,
-                      variables: {
-                        ...selectedAIProvider.variables,
-                        [apiKeyVar.key]: getApiKeyValue(),
-                      },
-                    });
-                  }}
-                  disabled={isApiKeyEmpty()}
-                  size="icon"
-                  className="shrink-0 h-11 w-11"
-                  title="Submit API Key"
-                >
-                  <KeyIcon className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => {
-                    const apiKeyVar = findKeyAndValue("api_key");
-                    if (!apiKeyVar || !selectedAIProvider) return;
-
-                    onSetSelectedAIProvider({
-                      ...selectedAIProvider,
-                      variables: {
-                        ...selectedAIProvider.variables,
-                        [apiKeyVar.key]: "",
-                      },
-                    });
-                  }}
-                  size="icon"
-                  variant="destructive"
-                  className="shrink-0 h-11 w-11"
-                  title="Remove API Key"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
+      {findKeyAndValue("api_key") && selectedAIProvider?.provider ? (
+        <ApiKeyField
+          providerId={selectedAIProvider.provider}
+          providerLabel={
+            activeProvider?.isCustom
+              ? "custom provider"
+              : selectedAIProvider.provider
+          }
+          endpoint={
+            activeProvider?.curl
+              ? endpointFor(activeProvider.curl, nonSecretVariables)
+              : null
+          }
+        />
       ) : null}
 
       <div className="space-y-4 mt-2">

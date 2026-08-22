@@ -1,8 +1,9 @@
-import { Button, Header, Input, Selection, TextInput } from "@/components";
+import { Header, Selection, TextInput } from "@/components";
+import { endpointFor, isSecretVariable } from "@/lib";
 import { UseSettingsReturn } from "@/types";
 import curl2Json, { ResultJSON } from "@bany/curl-to-json";
-import { KeyIcon, TrashIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ApiKeyField } from "../ApiKeyField";
 
 export const Providers = ({
   allSttProviders,
@@ -29,15 +30,18 @@ export const Providers = ({
     return sttVariables?.find((v) => v?.key === key);
   };
 
-  const getApiKeyValue = () => {
-    const apiKeyVar = findKeyAndValue("api_key");
-    if (!apiKeyVar || !selectedSttProvider?.variables) return "";
-    return selectedSttProvider?.variables?.[apiKeyVar.key] || "";
-  };
+  const activeProvider = allSttProviders?.find(
+    (p) => p?.id === selectedSttProvider?.provider
+  );
 
-  const isApiKeyEmpty = () => {
-    return !getApiKeyValue().trim();
-  };
+  // The endpoint a key gets bound to has to be derived without the key in it,
+  // or providers that authenticate in the query string would bind to an origin
+  // containing their own credential.
+  const nonSecretVariables = Object.fromEntries(
+    Object.entries(selectedSttProvider?.variables ?? {})
+      .filter(([name]) => !isSecretVariable(name))
+      .map(([name, value]) => [name.toUpperCase(), value])
+  );
 
   return (
     <div className="space-y-3">
@@ -75,100 +79,20 @@ export const Providers = ({
           description={`If you want to use different url or method, you can always create a custom provider.`}
         />
       ) : null}
-      {findKeyAndValue("api_key") ? (
-        <div className="space-y-2">
-          <Header
-            title="API Key"
-            description={`Enter your ${
-              allSttProviders?.find(
-                (p) => p?.id === selectedSttProvider?.provider
-              )?.isCustom
-                ? "Custom Provider"
-                : selectedSttProvider?.provider
-            } API key to authenticate and access STT models. Your key is stored locally and never shared.`}
-          />
-
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                placeholder="**********"
-                value={getApiKeyValue()}
-                onChange={(value) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedSttProvider) return;
-
-                  onSetSelectedSttProvider({
-                    ...selectedSttProvider,
-                    variables: {
-                      ...selectedSttProvider.variables,
-                      [apiKeyVar.key]:
-                        typeof value === "string" ? value : value.target.value,
-                    },
-                  });
-                }}
-                onKeyDown={(e) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedSttProvider) return;
-
-                  onSetSelectedSttProvider({
-                    ...selectedSttProvider,
-                    variables: {
-                      ...selectedSttProvider.variables,
-                      [apiKeyVar.key]: (e.target as HTMLInputElement).value,
-                    },
-                  });
-                }}
-                disabled={false}
-                className="flex-1 h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
-              />
-              {isApiKeyEmpty() ? (
-                <Button
-                  onClick={() => {
-                    const apiKeyVar = findKeyAndValue("api_key");
-                    if (!apiKeyVar || !selectedSttProvider || isApiKeyEmpty())
-                      return;
-
-                    onSetSelectedSttProvider({
-                      ...selectedSttProvider,
-                      variables: {
-                        ...selectedSttProvider.variables,
-                        [apiKeyVar.key]: getApiKeyValue(),
-                      },
-                    });
-                  }}
-                  disabled={isApiKeyEmpty()}
-                  size="icon"
-                  className="shrink-0 h-11 w-11"
-                  title="Submit API Key"
-                >
-                  <KeyIcon className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => {
-                    const apiKeyVar = findKeyAndValue("api_key");
-                    if (!apiKeyVar || !selectedSttProvider) return;
-
-                    onSetSelectedSttProvider({
-                      ...selectedSttProvider,
-                      variables: {
-                        ...selectedSttProvider.variables,
-                        [apiKeyVar.key]: "",
-                      },
-                    });
-                  }}
-                  size="icon"
-                  variant="destructive"
-                  className="shrink-0 h-11 w-11"
-                  title="Remove API Key"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
+      {findKeyAndValue("api_key") && selectedSttProvider?.provider ? (
+        <ApiKeyField
+          providerId={selectedSttProvider.provider}
+          providerLabel={
+            activeProvider?.isCustom
+              ? "custom provider"
+              : selectedSttProvider.provider
+          }
+          endpoint={
+            activeProvider?.curl
+              ? endpointFor(activeProvider.curl, nonSecretVariables)
+              : null
+          }
+        />
       ) : null}
 
       <div className="space-y-4 mt-2">

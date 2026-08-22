@@ -20,12 +20,37 @@ const SECRET_NAME_PATTERN = /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i;
 export const isSecretVariable = (name: string): boolean =>
   SECRET_NAME_PATTERN.test(name);
 
+/**
+ * Bytes to upload, base64 so they survive IPC. `field` set means multipart with
+ * the bytes in that field; absent means the bytes are the whole body.
+ *
+ * Rust assembles multipart rather than the frontend, because the body would
+ * otherwise have to be a String and audio is not UTF-8.
+ */
+export interface RequestUpload {
+  dataBase64: string;
+  field?: string;
+  fileName?: string;
+  mimeType?: string;
+  fields?: Record<string, string>;
+}
+
+/**
+ * Whether a credential is configured, without reading it. There is deliberately
+ * no command that returns the value.
+ */
+export const secretExists = (
+  providerId: string,
+  name: string
+): Promise<boolean> => invoke<boolean>("secret_exists", { providerId, name });
+
 export interface ProviderRequestParams {
   providerId: string;
   url: string;
   method: string;
   headers: Record<string, string>;
   body?: string;
+  upload?: RequestUpload;
   signal?: AbortSignal;
 }
 
@@ -38,6 +63,7 @@ export async function* streamProviderRequest({
   method,
   headers,
   body,
+  upload,
   signal,
 }: ProviderRequestParams): AsyncIterable<string> {
   const requestId = nextRequestId();
@@ -66,7 +92,7 @@ export async function* streamProviderRequest({
   signal?.addEventListener("abort", onAbort, { once: true });
 
   const completed = invoke("provider_request", {
-    request: { requestId, providerId, url, method, headers, body },
+    request: { requestId, providerId, url, method, headers, body, upload },
     onChunk: channel,
   })
     .catch((error: unknown) => {

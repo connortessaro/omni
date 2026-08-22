@@ -17,11 +17,40 @@ const injectSecrets = (text) => {
   return text.replace(/\{\{OMNI_SECRET:[A-Za-z0-9_]+\}\}/g, secret);
 };
 
+// This transport is the harness's credential store, and it always has something
+// to substitute: OMNI_EVAL_API_KEY when a live run set one, an empty string
+// otherwise. Gating on that variable instead would make every request-assembly
+// test depend on an unrelated environment variable to get past a pre-flight
+// check that is not what those tests are about.
+export const secretExists = async () => true;
+
+// Rust assembles multipart from the base64 upload; here fetch does, so the same
+// description has to be turned into a body it understands.
+const bodyFor = (body, upload) => {
+  if (upload) {
+    const bytes = Buffer.from(upload.dataBase64, "base64");
+    if (!upload.field) return bytes;
+
+    const form = new FormData();
+    form.append(
+      upload.field,
+      new Blob([bytes], { type: upload.mimeType ?? "application/octet-stream" }),
+      upload.fileName ?? "upload"
+    );
+    for (const [name, value] of Object.entries(upload.fields ?? {})) {
+      form.append(name, injectSecrets(value));
+    }
+    return form;
+  }
+  return body === undefined ? undefined : injectSecrets(body);
+};
+
 export async function* streamProviderRequest({
   url,
   method,
   headers,
   body,
+  upload,
   signal,
 }) {
   const injectedHeaders = Object.fromEntries(
@@ -31,10 +60,17 @@ export async function* streamProviderRequest({
     ])
   );
 
+  // fetch generates the boundary, so it owns Content-Type for multipart.
+  if (upload?.field) {
+    for (const name of Object.keys(injectedHeaders)) {
+      if (name.toLowerCase() === "content-type") delete injectedHeaders[name];
+    }
+  }
+
   const response = await globalThis.fetch(injectSecrets(url), {
     method,
     headers: injectedHeaders,
-    body: body === undefined ? undefined : injectSecrets(body),
+    body: bodyFor(body, upload),
     signal,
   });
 
