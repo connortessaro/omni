@@ -80,6 +80,20 @@ jobs:
           echo "dev server never came up"
           cat vite-dev.log
           exit 1
+      # The proxy is the HUD's provider backend in dev. Without it the model
+      # picker's request is blocked, and WebKit reports that as a pageerror the
+      # "no console errors" assertion catches. It holds no credential here; it
+      # only has to answer.
+      - name: Start provider proxy
+        run: |
+          nohup npm run dev:proxy > provider-proxy.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -so /dev/null http://127.0.0.1:1422/ && exit 0
+            sleep 1
+          done
+          echo "provider proxy never came up"
+          cat provider-proxy.log
+          exit 1
       - name: Probe HUD layout
         run: npm run hud:probe
       - name: Upload probe screenshots
@@ -90,6 +104,7 @@ jobs:
           path: |
             dev-harness/out/
             vite-dev.log
+            provider-proxy.log
           if-no-files-found: warn
 
   check-secret-field:
