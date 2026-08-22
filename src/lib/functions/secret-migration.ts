@@ -23,13 +23,26 @@ interface SelectedProvider {
 }
 
 /** The endpoint a secret is allowed to be sent to, from the provider's own curl. */
-const endpointFor = (
+export const endpointFor = (
   curl: string,
   variables: Record<string, string>
 ): string | null => {
   try {
     const parsed = curl2Json(curl);
-    const url = deepVariableReplacer(parsed.url ?? "", variables) as string;
+    // curl2Json percent-encodes the URL, so a {{VAR}} in the path arrives as
+    // %7B%7BVAR%7D%7D and leaves deepVariableReplacer nothing to match. It also
+    // lower-cases the host, which is why the name is put back into upper case:
+    // azure-stt carries {{REGION}} in its host, and without this the endpoint
+    // keeps the placeholder, the secret binds to a nonsense origin, and every
+    // request to it is refused.
+    const raw = (parsed.url ?? "")
+      .replace(/%7B%7B/gi, "{{")
+      .replace(/%7D%7D/gi, "}}")
+      .replace(
+        /\{\{([A-Za-z0-9_]+)\}\}/g,
+        (_match: string, name: string) => `{{${name.toUpperCase()}}}`
+      );
+    const url = deepVariableReplacer(raw, variables) as string;
     return url && /^https?:\/\//.test(url) ? url : null;
   } catch {
     return null;

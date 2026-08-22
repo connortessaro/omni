@@ -11,6 +11,7 @@
   const PROXY = window.__HARNESS_PROXY__ ?? "http://127.0.0.1:1422";
 
   const cancelled = new Set();
+  const deletedSecrets = new Set();
 
   /**
    * Delivers messages the way Tauri's IPC bridge delivers them to a Channel:
@@ -191,11 +192,20 @@
       return null;
     },
 
-    // The credential store has no browser equivalent. Reporting "stored" is
-    // truthful here: the proxy really does hold the key.
-    secret_store: () => null,
-    secret_delete: () => null,
-    secret_exists: () => true,
+    // The credential store has no browser equivalent. Reporting "stored" by
+    // default is truthful for the request path: the proxy really does hold the
+    // key. Stores and deletes are still tracked, so Dev space can be driven
+    // through both the configured and the unconfigured state.
+    secret_store: ({ providerId, name }) => {
+      deletedSecrets.delete(`${providerId}/${name}`);
+      return null;
+    },
+    secret_delete: ({ providerId, name }) => {
+      deletedSecrets.add(`${providerId}/${name}`);
+      return null;
+    },
+    secret_exists: ({ providerId, name }) =>
+      !deletedSecrets.has(`${providerId}/${name}`),
   };
 
   // tauri-plugin-sql returns `[rowsAffected, lastInsertId]` from execute and the
