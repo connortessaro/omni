@@ -21,6 +21,19 @@ import { webkit } from "playwright";
 const APP_URL = process.env.HUD_URL ?? "http://localhost:1420/";
 const ROUTE = "/dev-space";
 const SECRET = "sk-probe-should-never-persist";
+const LEGACY_SECRET = "sk-legacy-plaintext-copy";
+
+/** What an install that predates the migration has on disk, at mode 644. */
+const LEGACY_STATE = {
+  curl_selected_ai_provider: JSON.stringify({
+    provider: "gemini",
+    variables: { api_key: LEGACY_SECRET, model: "gemini-2.5-flash" },
+  }),
+  curl_selected_stt_provider: JSON.stringify({
+    provider: "gemini-stt",
+    variables: { api_key: LEGACY_SECRET, model: "gemini-2.5-flash" },
+  }),
+};
 
 const results = [];
 const record = (name, pass, detail) => {
@@ -51,8 +64,46 @@ const run = async () => {
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 
   try {
+    // Seeded before any app code runs, so this is what the migration finds.
+    await page.addInitScript((state) => {
+      for (const [key, value] of Object.entries(state)) {
+        localStorage.setItem(key, value);
+      }
+    }, LEGACY_STATE);
+
     await page.goto(new URL(ROUTE, APP_URL).href, { waitUntil: "load" });
     await field(page).waitFor({ state: "visible", timeout: 15000 });
+
+    // The migration is an effect, so it lands a tick after the first render.
+    await page
+      .waitForFunction(
+        () => !(localStorage.getItem("curl_selected_ai_provider") ?? "").includes("api_key"),
+        null,
+        { timeout: 10000 }
+      )
+      .catch(() => {});
+
+    const afterMigration = await persisted(page);
+    record(
+      "a plaintext key already on disk is deleted, not left beside the store copy",
+      !afterMigration.includes(LEGACY_SECRET),
+      afterMigration.includes(LEGACY_SECRET)
+        ? `the legacy value survived: ${afterMigration.slice(0, 300)}`
+        : "no persisted value matches the seeded credential"
+    );
+    record(
+      "the migration strips both the AI and the STT provider",
+      !/"?api_key"?\s*:/i.test(afterMigration),
+      /"?api_key"?\s*:/i.test(afterMigration)
+        ? `api_key still present: ${afterMigration.slice(0, 300)}`
+        : "neither selected provider carries a secret-named variable"
+    );
+    record(
+      "stripping a credential leaves the rest of the provider intact",
+      afterMigration.includes("gemini-2.5-flash") &&
+        afterMigration.includes("gemini-stt"),
+      "provider id and model survived the strip"
+    );
 
     // The mock reports a stored secret by default, so the configured state is
     // what loads first.

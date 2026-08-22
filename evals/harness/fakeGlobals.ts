@@ -5,6 +5,7 @@ declare global {
         getItem(key: string): string | null;
         setItem(key: string, value: string): void;
         removeItem(key: string): void;
+        clear(): void;
       }
     | undefined;
 }
@@ -29,6 +30,10 @@ export class MemoryStorage {
   removeItem(key: string): void {
     this.store.delete(key);
   }
+
+  clear(): void {
+    this.store.clear();
+  }
 }
 
 /**
@@ -41,6 +46,11 @@ export class MemoryStorage {
  */
 export function installMemoryLocalStorage(seed?: Record<string, string>): void {
   globalThis.localStorage = new MemoryStorage(seed);
+  // safeLocalStorage (src/lib/storage/helper.ts) returns early when there is no
+  // `window`, so without this every write through it silently no-ops and a test
+  // reads back an empty store.
+  const global = globalThis as { window?: unknown };
+  global.window ??= globalThis;
 }
 
 /**

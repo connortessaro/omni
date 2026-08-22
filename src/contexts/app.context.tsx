@@ -4,7 +4,13 @@ import {
   SPEECH_TO_TEXT_PROVIDERS,
   STORAGE_KEYS,
 } from "@/config";
-import { getPlatform, migrateProviderSecrets, safeLocalStorage } from "@/lib";
+import {
+  getPlatform,
+  migrateProviderSecrets,
+  persistSelectedProvider,
+  safeLocalStorage,
+  withoutSecrets,
+} from "@/lib";
 import { getShortcutsConfig } from "@/lib/storage";
 import {
   getCustomizableState,
@@ -416,25 +422,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     checkImageSupport();
   }, [selectedAIProvider.provider]);
 
-  // Sync selected AI to localStorage
+  // Sync selected AI to localStorage. Credentials are stripped on the way out;
+  // persistSelectedProvider is the only writer of these keys.
   useEffect(() => {
-    if (selectedAIProvider.provider) {
-      safeLocalStorage.setItem(
-        STORAGE_KEYS.SELECTED_AI_PROVIDER,
-        JSON.stringify(selectedAIProvider)
-      );
-    }
+    persistSelectedProvider(
+      STORAGE_KEYS.SELECTED_AI_PROVIDER,
+      selectedAIProvider
+    );
   }, [selectedAIProvider]);
 
-
-  // Sync selected STT to localStorage
   useEffect(() => {
-    if (selectedSttProvider.provider) {
-      safeLocalStorage.setItem(
-        STORAGE_KEYS.SELECTED_STT_PROVIDER,
-        JSON.stringify(selectedSttProvider)
-      );
-    }
+    persistSelectedProvider(
+      STORAGE_KEYS.SELECTED_STT_PROVIDER,
+      selectedSttProvider
+    );
   }, [selectedSttProvider]);
 
   // Computed all AI providers
@@ -450,10 +451,39 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   ];
 
   // Credentials belong in the OS credential store, not localStorage. Runs on
-  // every provider change so a key entered in Dev space lands there too.
+  // every provider change so a key entered in Dev space lands there too, then
+  // drops the plaintext copy from state so the next persist cannot write it.
+  //
+  // The `moved.length === 0` guard is what stops this looping: once the
+  // variables hold no secret, the migration reports nothing moved and no state
+  // update is queued.
   useEffect(() => {
-    void migrateProviderSecrets(selectedAIProvider, allAiProviders);
+    void (async () => {
+      const moved = await migrateProviderSecrets(
+        selectedAIProvider,
+        allAiProviders
+      );
+      if (moved.length === 0) return;
+      setSelectedAIProvider((prev) => ({
+        ...prev,
+        variables: withoutSecrets(prev.variables),
+      }));
+    })();
   }, [selectedAIProvider, allAiProviders]);
+
+  useEffect(() => {
+    void (async () => {
+      const moved = await migrateProviderSecrets(
+        selectedSttProvider,
+        allSttProviders
+      );
+      if (moved.length === 0) return;
+      setSelectedSttProvider((prev) => ({
+        ...prev,
+        variables: withoutSecrets(prev.variables),
+      }));
+    })();
+  }, [selectedSttProvider, allSttProviders]);
 
   const onSetSelectedAIProvider = ({
     provider,
