@@ -17,11 +17,37 @@ const injectSecrets = (text) => {
   return text.replace(/\{\{OMNI_SECRET:[A-Za-z0-9_]+\}\}/g, secret);
 };
 
+// A live run has a key in the environment; a dry run does not and does not need
+// one, because nothing it talks to checks.
+export const secretExists = async () => Boolean(process.env.OMNI_EVAL_API_KEY);
+
+// Rust assembles multipart from the base64 upload; here fetch does, so the same
+// description has to be turned into a body it understands.
+const bodyFor = (body, upload) => {
+  if (upload) {
+    const bytes = Buffer.from(upload.dataBase64, "base64");
+    if (!upload.field) return bytes;
+
+    const form = new FormData();
+    form.append(
+      upload.field,
+      new Blob([bytes], { type: upload.mimeType ?? "application/octet-stream" }),
+      upload.fileName ?? "upload"
+    );
+    for (const [name, value] of Object.entries(upload.fields ?? {})) {
+      form.append(name, injectSecrets(value));
+    }
+    return form;
+  }
+  return body === undefined ? undefined : injectSecrets(body);
+};
+
 export async function* streamProviderRequest({
   url,
   method,
   headers,
   body,
+  upload,
   signal,
 }) {
   const injectedHeaders = Object.fromEntries(
@@ -31,10 +57,17 @@ export async function* streamProviderRequest({
     ])
   );
 
+  // fetch generates the boundary, so it owns Content-Type for multipart.
+  if (upload?.field) {
+    for (const name of Object.keys(injectedHeaders)) {
+      if (name.toLowerCase() === "content-type") delete injectedHeaders[name];
+    }
+  }
+
   const response = await globalThis.fetch(injectSecrets(url), {
     method,
     headers: injectedHeaders,
-    body: body === undefined ? undefined : injectSecrets(body),
+    body: bodyFor(body, upload),
     signal,
   });
 

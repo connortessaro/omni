@@ -31,7 +31,7 @@ const NODE_HTTP_PASSTHROUGH = path.join(
  */
 const NODE_TRANSPORT = path.join(__dirname, "node-transport.mjs");
 
-const redirectTransport = {
+const transportRedirect = (target: string) => ({
   name: "redirect-transport",
   setup(build: {
     onResolve: (
@@ -40,10 +40,10 @@ const redirectTransport = {
     ) => void;
   }) {
     build.onResolve({ filter: /(^|\/)transport(\.ts)?$/ }, () => ({
-      path: NODE_TRANSPORT,
+      path: target,
     }));
   },
-};
+});
 
 /**
  * Bundles a single file from the real `src/` tree with esbuild (honoring the
@@ -66,6 +66,11 @@ export interface LoadOptions {
    * can be exercised in Node without touching production code.
    */
   alias?: Record<string, string>;
+  /**
+   * Replaces the Node transport with another module, so a test can record what
+   * a request path assembled instead of issuing it.
+   */
+  transport?: string;
 }
 
 export async function loadSrcModule<T>(
@@ -88,7 +93,7 @@ export async function loadSrcModule<T>(
       [TAURI_HTTP_SPECIFIER]: NODE_HTTP_PASSTHROUGH,
       ...options.alias,
     },
-    plugins: [redirectTransport],
+    plugins: [transportRedirect(options.transport ?? NODE_TRANSPORT)],
     tsconfig: TSCONFIG_PATH,
     logLevel: "silent",
   });
