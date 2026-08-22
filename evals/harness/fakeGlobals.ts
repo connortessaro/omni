@@ -43,6 +43,33 @@ export function installMemoryLocalStorage(seed?: Record<string, string>): void {
   globalThis.localStorage = new MemoryStorage(seed);
 }
 
+/**
+ * `blobToBase64` (src/lib/functions/common.function.ts) encodes inline audio
+ * with `FileReader`, which the webview has and Node does not. This is the
+ * smallest shim that satisfies it: `readAsDataURL` only, because that is the
+ * one method the production path calls.
+ */
+export function installFileReader(): void {
+  class NodeFileReader {
+    result: string | null = null;
+    onloadend: (() => void) | null = null;
+    onerror: ((error: unknown) => void) | null = null;
+
+    readAsDataURL(blob: Blob): void {
+      void blob
+        .arrayBuffer()
+        .then((buffer) => {
+          const base64 = Buffer.from(buffer).toString("base64");
+          this.result = `data:${blob.type};base64,${base64}`;
+          this.onloadend?.();
+        })
+        .catch((error) => this.onerror?.(error));
+    }
+  }
+
+  (globalThis as { FileReader?: unknown }).FileReader = NodeFileReader;
+}
+
 export interface CapturedRequest {
   url: string;
   method: string;
