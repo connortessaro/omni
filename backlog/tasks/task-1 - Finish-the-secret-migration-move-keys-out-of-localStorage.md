@@ -1,7 +1,7 @@
 ---
 id: TASK-1
 title: 'Finish the secret migration: move keys out of localStorage'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-19 17:46'
 labels:
@@ -22,9 +22,9 @@ Provider requests already carry {{OMNI_SECRET:NAME}} and Rust substitutes only f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 models.function.ts issues its request through streamProviderRequest with a placeholder instead of the key
-- [ ] #2 stt.function.ts issues its request through streamProviderRequest with a placeholder instead of the key
-- [ ] #3 Dev space provider UI writes via secret_store on save and renders configured state via secret_exists
-- [ ] #4 Startup migration deletes the localStorage copy once the credential store holds the value
-- [ ] #5 grep of localStorage writes shows no secret-named variable persisted in plaintext
+- [x] #1 models.function.ts issues its request through streamProviderRequest with a placeholder instead of the key
+- [x] #2 stt.function.ts issues its request through streamProviderRequest with a placeholder instead of the key
+- [x] #3 Dev space provider UI writes via secret_store on save and renders configured state via secret_exists
+- [x] #4 Startup migration deletes the localStorage copy once the credential store holds the value
+- [x] #5 grep of localStorage writes shows no secret-named variable persisted in plaintext
 <!-- AC:END -->
