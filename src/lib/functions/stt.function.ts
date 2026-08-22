@@ -83,8 +83,19 @@ export async function fetchSTT(params: STTParams): Promise<string> {
       ),
     };
 
-    // Prepare request
-    let url = deepVariableReplacer(curlJson.url || "", allVariables);
+    // Prepare request.
+    //
+    // curl2Json percent-encodes the URL, which turns a `{{VAR}}` in the path
+    // into `%7B%7BVAR%7D%7D` and leaves deepVariableReplacer nothing to match —
+    // the placeholder then ships literally and the provider answers 404, which
+    // reads like a bad key. Query-string placeholders already get this
+    // treatment further down (decodeURIComponent on each param); the braces are
+    // restored rather than decoding the whole URL so that genuinely encoded
+    // characters elsewhere in it survive.
+    const rawUrl = (curlJson.url || "")
+      .replace(/%7B%7B/gi, "{{")
+      .replace(/%7D%7D/gi, "}}");
+    let url = deepVariableReplacer(rawUrl, allVariables);
     const headers = deepVariableReplacer(curlJson.header || {}, allVariables);
     const formData = deepVariableReplacer(curlJson.form || {}, allVariables);
 
@@ -170,6 +181,11 @@ export async function fetchSTT(params: STTParams): Promise<string> {
     } else {
       // Google-style: JSON payload with base64
       allVariables.AUDIO = await blobToBase64(audio);
+      // Providers that take inline audio have to be told what the bytes are.
+      // The two recorders disagree — system audio is WAV, the mic goes through
+      // WKWebView's MediaRecorder and comes out audio/mp4 — so a template
+      // cannot hardcode it.
+      allVariables.MIME = audio.type.split(";")[0].trim().toLowerCase();
       const dataObj = curlJson.data ? { ...curlJson.data } : {};
       body = JSON.stringify(deepVariableReplacer(dataObj, allVariables));
     }

@@ -1,5 +1,29 @@
 export const SPEECH_TO_TEXT_PROVIDERS = [
   {
+    // Gemini transcribes inline audio through the same generateContent endpoint
+    // the chat path uses, so one key covers both. Thinking is budgeted to zero:
+    // transcription needs none, and a thought part would land at parts[0] ahead
+    // of the transcript.
+    id: "gemini-stt",
+    name: "Gemini Speech-to-Text",
+    curl: `curl -X POST "https://generativelanguage.googleapis.com/v1beta/models/{{MODEL}}:generateContent" \\
+      -H "x-goog-api-key: {{API_KEY}}" \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "contents": [
+          {
+            "parts": [
+              { "text": "Transcribe this audio verbatim. Output only the transcription, with no commentary." },
+              { "inline_data": { "mime_type": "{{MIME}}", "data": "{{AUDIO}}" } }
+            ]
+          }
+        ],
+        "generationConfig": { "temperature": 0, "thinkingConfig": { "thinkingBudget": 0 } }
+      }'`,
+    responseContentPath: "candidates[0].content.parts[0].text",
+    streaming: false,
+  },
+  {
     id: "openai-whisper",
     name: "OpenAI Whisper",
     curl: `curl -X POST "https://api.openai.com/v1/audio/transcriptions" \\
