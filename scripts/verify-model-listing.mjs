@@ -23,8 +23,11 @@ if (!providerId) {
   process.exit(1);
 }
 
-// listModels reads a key out of the provider's configured variables.
-const variables = { API_KEY: apiKey ?? "" };
+// listModels no longer reads a key out of the provider's variables; the Node
+// transport substitutes OMNI_EVAL_API_KEY for the placeholder and reports the
+// secret as present when that variable is set.
+if (apiKey) process.env.OMNI_EVAL_API_KEY = apiKey;
+const variables = {};
 
 const { listModels } = await loadSrcModule("lib/functions/models.function.ts");
 
