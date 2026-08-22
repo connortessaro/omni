@@ -1,7 +1,7 @@
 {
   "name": "omni",
   "private": true,
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Local-first AI assistant for the desktop. Bring your own provider key.",
   "author": "Connor Tessaro",
   "license": "Apache-2.0",
