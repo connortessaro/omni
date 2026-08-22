@@ -46,6 +46,38 @@
   const providerRequest = async ({ request, onChunk }) => {
     const emit = channelSender(onChunk);
 
+    // Scripted mode, for measuring the app's own latency without paying a
+    // provider. The caller supplies the chunks and the schedule, so the network
+    // time is a known constant instead of noise, and what is left over is
+    // Omni's own cost. Marks are recorded here because this is the first point
+    // at which the request body exists.
+    const script = window.__HARNESS_STREAM__;
+    if (script) {
+      window.__TTFT__ = window.__TTFT__ ?? {};
+      window.__TTFT__.requestAt = performance.now();
+      window.__TTFT__.bodyChars = (request.body ?? "").length;
+      window.__TTFT__.imageCount = (
+        (request.body ?? "").match(/data:image\/[a-z]+;base64,/g) ?? []
+      ).length;
+
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      await sleep(script.firstChunkDelayMs ?? 0);
+
+      for (const [index, chunk] of (script.chunks ?? []).entries()) {
+        if (cancelled.has(request.requestId)) break;
+        if (index === 0) window.__TTFT__.firstChunkAt = performance.now();
+        else await sleep(script.chunkIntervalMs ?? 0);
+        emit(chunk);
+      }
+      // Recorded so a caller can tell an incremental render from one that waits
+      // for the whole answer: first paint before this is streaming, after it is
+      // not.
+      window.__TTFT__.lastChunkAt = performance.now();
+      emit.end();
+      cancelled.delete(request.requestId);
+      return null;
+    }
+
     const response = await fetch(`${PROXY}/provider`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
