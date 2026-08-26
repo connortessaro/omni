@@ -11,6 +11,12 @@ const MAX_HUD_HEIGHT = 600;
  */
 let measuredHudHeight = MIN_HUD_HEIGHT;
 
+/**
+ * The height the native window was last asked for, by either resize path. Both
+ * write it, so neither re-sends a height the window already has.
+ */
+let requestedHudHeight = MIN_HUD_HEIGHT;
+
 const clampHudHeight = (height: number): number =>
   Math.min(Math.max(Math.ceil(height), MIN_HUD_HEIGHT), MAX_HUD_HEIGHT);
 
@@ -31,9 +37,9 @@ const isAnyPopoverOpen = (): boolean => {
  * one-word answer covered as much of the screen as a long one: an always-on-top
  * overlay taking a third of the display to say "HARNESS OK".
  */
-const expandedHudHeight = (): number => {
+const expandedHudHeight = (): number | null => {
   const card = document.querySelector('[data-slot="card"]');
-  if (!card) return MAX_HUD_HEIGHT;
+  if (!card) return null;
 
   const cardRect = card.getBoundingClientRect();
   let bottom = cardRect.bottom;
@@ -45,9 +51,12 @@ const expandedHudHeight = (): number => {
       if (rect.height > 0) bottom = Math.max(bottom, rect.bottom);
     });
 
-  // Nothing measurable open yet: ask for the full height rather than clipping the
-  // popover that is about to appear.
-  if (bottom <= cardRect.bottom) return MAX_HUD_HEIGHT;
+  // Nothing measurable open yet. This used to ask for the full 600px, which is what
+  // made the window snap open to a third of the screen and then collapse to the
+  // panel's real height a frame later: 600 -> 192 -> back up, on every single
+  // answer. Asking for nothing leaves the window where it is for that one frame,
+  // and the re-measure scheduled by the caller supplies the real height.
+  if (bottom <= cardRect.bottom) return null;
 
   return clampHudHeight(bottom - cardRect.top);
 };
@@ -62,6 +71,15 @@ export const useWindowResize = () => {
       }
 
       const newHeight = expanded ? expandedHudHeight() : measuredHudHeight;
+      if (newHeight === null) return;
+
+      // The observer below fires on every DOM mutation, which during a streamed
+      // answer is every token: one answer asked for 913 window resizes, all but 13
+      // of them for a height the window already had. Each one is a synchronous
+      // native resize on the main thread. Only send a height that differs, the way
+      // useHudAutoHeight already does.
+      if (newHeight === requestedHudHeight) return;
+      requestedHudHeight = newHeight;
 
       await invoke("set_window_height", {
         window,
@@ -173,6 +191,8 @@ export const useHudAutoHeight = (ref: RefObject<HTMLElement | null>) => {
       measuredHudHeight = next;
 
       if (isAnyPopoverOpen()) return;
+      if (next === requestedHudHeight) return;
+      requestedHudHeight = next;
 
       try {
         await invoke("set_window_height", {

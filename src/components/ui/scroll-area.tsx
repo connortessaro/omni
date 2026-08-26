@@ -14,9 +14,16 @@ function ScrollArea({
       className={cn("relative", className)}
       {...props}
     >
+      {/* `max-h-[inherit]` is what makes a `max-h-*` on the Root actually scroll.
+          The viewport is `height: 100%` against a Root with no definite height, so
+          the percentage resolves to auto and the viewport grows to its content:
+          clientHeight equals scrollHeight, nothing ever overflows, and the wheel,
+          the scrollbar and every programmatic scrollTo are no-ops on an answer
+          taller than the panel. Inheriting the Root's max-height gives the viewport
+          the bound it needs to become the scroll container. */}
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+        className="focus-visible:ring-ring/50 size-full max-h-[inherit] rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
