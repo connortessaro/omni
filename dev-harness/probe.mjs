@@ -817,6 +817,47 @@ const run = async () => {
     `requested=${chipMenu.requested} menu bottom=${chipMenu.bottom}`
   );
 
+  const chipMenuShape = await page.evaluate(() => {
+    const menu = document.querySelector('[data-slot="profile-menu"]');
+    const options = [...document.querySelectorAll('[role="option"]')];
+    return {
+      groups: [...document.querySelectorAll('[data-slot="profile-group"]')].map((g) =>
+        g.textContent.trim()
+      ),
+      options: options.length,
+      // Every option must sit under a heading. Counting headings alone would pass a menu
+      // that renders one group and then dumps the rest loose underneath it, and it would
+      // fail honestly whenever a group happens to be empty.
+      grouped: options.filter((option) =>
+        option.closest("div")?.parentElement?.querySelector('[data-slot="profile-group"]')
+      ).length,
+      summaries: options.filter((o) =>
+        o.querySelector('[data-slot="profile-summary"]')
+      ).length,
+      scrolls: menu ? getComputedStyle(menu).overflowY : null,
+      maxHeight: menu ? getComputedStyle(menu).maxHeight : null,
+    };
+  });
+
+  record(
+    "the profile menu groups its options",
+    chipMenuShape.groups.length >= 1 &&
+      chipMenuShape.options > 0 &&
+      chipMenuShape.grouped === chipMenuShape.options,
+    `groups=${JSON.stringify(chipMenuShape.groups)} ` +
+      `${chipMenuShape.grouped}/${chipMenuShape.options} options under a heading`
+  );
+  record(
+    "every profile option explains itself in one line",
+    chipMenuShape.options > 0 && chipMenuShape.summaries === chipMenuShape.options,
+    `${chipMenuShape.summaries}/${chipMenuShape.options} options carry a summary`
+  );
+  record(
+    "the profile menu scrolls rather than running off the screen",
+    chipMenuShape.scrolls === "auto" || chipMenuShape.scrolls === "scroll",
+    `overflow-y=${chipMenuShape.scrolls} max-height=${chipMenuShape.maxHeight}`
+  );
+
   await page.keyboard.press("Escape");
 
   record(

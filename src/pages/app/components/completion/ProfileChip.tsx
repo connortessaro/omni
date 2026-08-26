@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components";
 import { useSystemPrompts } from "@/hooks";
-import { isBuiltinSystemPrompt, profileAccent, ProfileAccent } from "@/lib";
+import {
+  PROFILE_GROUP_ORDER,
+  profileAccent,
+  ProfileAccent,
+  profileById,
+} from "@/lib";
 
 /**
  * Which prompt profile the next turn will run under, and a way to change it.
@@ -31,6 +36,39 @@ const ACCENT_CLASSES: Record<ProfileAccent, string> = {
   amber: "border-amber-500/40 text-amber-700 dark:border-amber-400/40 dark:text-amber-300",
   slate: "border-input/40 text-muted-foreground",
 };
+
+const ProfileOption = ({
+  name,
+  summary,
+  active,
+  onSelect,
+}: {
+  name: string;
+  summary: string;
+  active: boolean;
+  onSelect: () => void;
+}) => (
+  <button
+    type="button"
+    role="option"
+    aria-selected={active}
+    onClick={onSelect}
+    className={`flex w-full cursor-pointer items-start justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left transition ${
+      active ? "bg-primary/15" : "hover:bg-primary/10"
+    }`}
+  >
+    <span className="min-w-0">
+      <span className="block truncate text-xs">{name}</span>
+      <span
+        data-slot="profile-summary"
+        className="block truncate text-[10px] text-muted-foreground"
+      >
+        {summary}
+      </span>
+    </span>
+    {active && <Check className="mt-0.5 size-3 shrink-0" aria-hidden="true" />}
+  </button>
+);
 
 export const ProfileChip = () => {
   const { prompts, selectedPromptId, handleSelectPrompt } = useSystemPrompts();
@@ -65,40 +103,68 @@ export const ProfileChip = () => {
         side="bottom"
         sideOffset={8}
         avoidCollisions={false}
-        className="w-56 p-1"
+        className="w-72 p-1"
       >
-        <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-          Prompt profile
-        </div>
-        <div role="listbox" aria-label="Prompt profile" className="flex flex-col gap-0.5">
-          {prompts.map((prompt) => {
-            const active = prompt.id === selectedPromptId;
+        <div
+          data-slot="profile-menu"
+          role="listbox"
+          aria-label="Prompt profile"
+          className="max-h-[320px] overflow-y-auto"
+        >
+          {PROFILE_GROUP_ORDER.map((group) => {
+            const inGroup = prompts.filter(
+              (prompt) => profileById(prompt.id)?.group === group
+            );
+            if (inGroup.length === 0) return null;
             return (
-              <button
-                key={prompt.id}
-                type="button"
-                role="option"
-                aria-selected={active}
-                onClick={() => {
-                  handleSelectPrompt(prompt.id);
-                  setOpen(false);
-                }}
-                className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition ${
-                  active ? "bg-primary/15" : "hover:bg-primary/10"
-                }`}
-              >
-                <span className="truncate">{prompt.name}</span>
-                <span className="flex shrink-0 items-center gap-1.5">
-                  {isBuiltinSystemPrompt(prompt.id) && (
-                    <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">
-                      built-in
-                    </span>
-                  )}
-                  {active && <Check className="size-3" aria-hidden="true" />}
-                </span>
-              </button>
+              <div key={group}>
+                <div
+                  data-slot="profile-group"
+                  className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+                >
+                  {group}
+                </div>
+                {inGroup.map((prompt) => (
+                  <ProfileOption
+                    key={prompt.id}
+                    name={prompt.name}
+                    summary={profileById(prompt.id)?.summary ?? ""}
+                    active={prompt.id === selectedPromptId}
+                    onSelect={() => {
+                      handleSelectPrompt(prompt.id);
+                      setOpen(false);
+                    }}
+                  />
+                ))}
+              </div>
             );
           })}
+
+          {/* Anything the user typed has no registry entry, so it has no group either. */}
+          {prompts.some((prompt) => !profileById(prompt.id)) && (
+            <div>
+              <div
+                data-slot="profile-group"
+                className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+              >
+                Yours
+              </div>
+              {prompts
+                .filter((prompt) => !profileById(prompt.id))
+                .map((prompt) => (
+                  <ProfileOption
+                    key={prompt.id}
+                    name={prompt.name}
+                    summary="Your own prompt"
+                    active={prompt.id === selectedPromptId}
+                    onSelect={() => {
+                      handleSelectPrompt(prompt.id);
+                      setOpen(false);
+                    }}
+                  />
+                ))}
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
