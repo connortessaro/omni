@@ -2,6 +2,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod capture;
 mod provider;
+mod runner;
 mod secrets;
 mod db;
 mod shortcuts;
@@ -56,6 +57,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             window::set_window_height,
+            runner::run_code,
             window::open_dashboard,
             window::toggle_dashboard,
             window::move_window,

@@ -15,3 +15,4 @@ export * from "./agent/tools";
 export * from "./agent/loop";
 
 export * from "./assessment";
+export * from "./test-runner";
