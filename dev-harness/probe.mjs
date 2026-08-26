@@ -775,6 +775,50 @@ const run = async () => {
       `lineBoxes=${codeWrap.lineBoxes} (want 1)`
   );
 
+  // The bar is 54px tall, so anything opening from it has nowhere to go until the native
+  // window grows. A popover that lets Radix flip it upward instead lands off the top of
+  // the window, clipped, and takes the resize logic with it: a flipped popover measures
+  // as "nothing open yet", no resize fires, and no room below ever appears.
+  // A fresh page: the checks above leave prompt text, open popovers and a grown
+  // viewport behind, and any of those changes where a menu is allowed to open.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.setViewportSize({ width: HUD_WIDTH, height: HUD_RESTING_HEIGHT });
+  await page.waitForSelector('[data-slot="profile-chip"]', { timeout: 15_000 });
+  await page.locator('[data-slot="profile-chip"]').click();
+  await page.waitForSelector("[data-radix-popper-content-wrapper]", { timeout: 10_000 });
+  await page.waitForTimeout(400);
+
+  const chipMenu = await page.evaluate(() => {
+    const card = document.querySelector('[data-slot="card"]');
+    const wrapper = document.querySelector("[data-radix-popper-content-wrapper]");
+    const rect = wrapper?.getBoundingClientRect();
+    const heights = (window.__HARNESS__?.callsFor("set_window_height") ?? []).map(
+      (call) => call.args?.height
+    );
+    return {
+      top: rect ? Math.round(rect.top) : null,
+      bottom: rect ? Math.round(rect.bottom) : null,
+      cardBottom: card ? Math.round(card.getBoundingClientRect().bottom) : null,
+      options: document.querySelectorAll('[role="option"]').length,
+      requested: heights.length ? heights[heights.length - 1] : null,
+    };
+  });
+
+  record(
+    "the profile menu opens below the bar, not off the top of the window",
+    chipMenu.top !== null && chipMenu.top >= 0 && chipMenu.options > 0,
+    `top=${chipMenu.top} bottom=${chipMenu.bottom} options=${chipMenu.options}`
+  );
+  record(
+    "the window grows to fit the profile menu",
+    chipMenu.requested !== null &&
+      chipMenu.bottom !== null &&
+      chipMenu.requested >= chipMenu.bottom,
+    `requested=${chipMenu.requested} menu bottom=${chipMenu.bottom}`
+  );
+
+  await page.keyboard.press("Escape");
+
   record(
     "no console errors",
     consoleErrors.length === 0,

@@ -53,10 +53,17 @@ export const ProfileChip = () => {
         </button>
       </PopoverTrigger>
 
+      {/* The window is 54px tall at rest, so Radix's collision handling flips this menu
+          upward, off the top of the window, where it is clipped and cannot be reached.
+          Worse, a flipped menu sits above the card's bottom edge, which is exactly what
+          useWindowResize reads as "nothing measurable is open yet": no resize fires, no
+          room below ever appears, and the menu stays flipped forever. The window grows
+          to fit whatever opens, so there is no collision to avoid. */}
       <PopoverContent
         align="start"
         side="bottom"
         sideOffset={8}
+        avoidCollisions={false}
         className="w-56 p-1"
       >
         <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">

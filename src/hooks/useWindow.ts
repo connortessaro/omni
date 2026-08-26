@@ -48,7 +48,18 @@ const expandedHudHeight = (): number | null => {
     .querySelectorAll("[data-radix-popper-content-wrapper]")
     .forEach((wrapper) => {
       const rect = wrapper.getBoundingClientRect();
-      if (rect.height > 0) bottom = Math.max(bottom, rect.bottom);
+      if (rect.height === 0) return;
+
+      // A popover Radix has flipped upward for want of room sits entirely above the
+      // card's bottom edge, so measuring to its bottom asks for no extra height and the
+      // window never grows: no room below appears, the popover stays flipped, and it is
+      // clipped off the top of a 54px window forever. Asking for the card plus the
+      // popover's own height breaks that loop wherever a popover forgets to opt out of
+      // collision handling.
+      bottom =
+        rect.bottom <= cardRect.bottom
+          ? Math.max(bottom, cardRect.bottom + rect.height)
+          : Math.max(bottom, rect.bottom);
     });
 
   // Nothing measurable open yet. This used to ask for the full 600px, which is what
