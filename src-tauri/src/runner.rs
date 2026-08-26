@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -36,6 +37,70 @@ fn interpreter_for(language: &str) -> Option<(&'static str, &'static [&'static s
         "typescript" | "ts" => Some(("node", &["--experimental-strip-types"])),
         _ => None,
     }
+}
+
+/// Where interpreters live when the app was not launched from a shell.
+///
+/// A Finder-launched app inherits `/usr/bin:/bin:/usr/sbin:/sbin` and nothing else, so
+/// `node` installed by Homebrew or nvm and `python3` installed by Homebrew are all
+/// invisible to it even though they work in every terminal on the machine. Searching
+/// these explicitly is what keeps "Run tests" from reporting that node is not installed
+/// on a machine that plainly has it.
+const EXTRA_BIN_DIRS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+
+/// nvm keeps each version in its own directory and puts none of them on a global PATH.
+fn nvm_node_dirs() -> Vec<PathBuf> {
+    let Some(home) = std::env::var_os("HOME") else {
+        return Vec::new();
+    };
+    let versions = PathBuf::from(home).join(".nvm/versions/node");
+    let Ok(entries) = std::fs::read_dir(&versions) else {
+        return Vec::new();
+    };
+
+    // Newest first. Sorting the names as strings puts v9 above v10, so the version is
+    // compared as numbers.
+    let mut found: Vec<(Vec<u64>, PathBuf)> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let parts = name
+                .trim_start_matches('v')
+                .split('.')
+                .map(|part| part.parse::<u64>().unwrap_or(0))
+                .collect::<Vec<_>>();
+            (parts, entry.path().join("bin"))
+        })
+        .collect();
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.into_iter().map(|(_, path)| path).collect()
+}
+
+/// Every directory worth looking in, the given PATH first so a shell-launched app keeps
+/// using whatever the user's shell would have used.
+///
+/// PATH is a parameter rather than an environment read so the Finder case (no useful
+/// PATH at all) is testable without mutating the environment other tests are running in.
+fn search_dirs(path_var: Option<&OsStr>) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = path_var
+        .map(|path| std::env::split_paths(path).collect())
+        .unwrap_or_default();
+    dirs.extend(EXTRA_BIN_DIRS.iter().map(PathBuf::from));
+    dirs.extend(nvm_node_dirs());
+    dirs
+}
+
+/// Resolves an interpreter to an absolute path, so the child is spawned against a binary
+/// that was confirmed to exist rather than against a name and a hope.
+fn resolve_program(program: &str) -> Option<PathBuf> {
+    resolve_program_in(program, std::env::var_os("PATH").as_deref())
+}
+
+fn resolve_program_in(program: &str, path_var: Option<&OsStr>) -> Option<PathBuf> {
+    search_dirs(path_var).into_iter().find_map(|dir| {
+        let candidate = dir.join(program);
+        candidate.is_file().then_some(candidate)
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -173,7 +238,24 @@ fn run_in(
     env.insert("PYTHONDONTWRITEBYTECODE".into(), "1".into());
     env.insert("NO_COLOR".into(), "1".into());
 
-    let mut child = Command::new(program)
+    let resolved = resolve_program(program).ok_or_else(|| {
+        format!(
+            "`{program}` was not found. Looked on PATH and in {}.",
+            EXTRA_BIN_DIRS.join(", ")
+        )
+    })?;
+
+    // The resolved directory joins the child's PATH so the interpreter can find its own
+    // neighbours: node resolving npx, python3 resolving pip's console scripts.
+    if let Some(parent) = resolved.parent() {
+        let existing = env.get("PATH").cloned().unwrap_or_default();
+        env.insert(
+            "PATH".into(),
+            format!("{}:{existing}", parent.display()),
+        );
+    }
+
+    let mut child = Command::new(&resolved)
         .args(extra_args)
         .arg(entry)
         .current_dir(root)
@@ -187,7 +269,7 @@ fn run_in(
             if e.kind() == std::io::ErrorKind::NotFound {
                 format!("`{program}` is not installed or not on PATH")
             } else {
-                format!("Failed to start `{program}`: {e}")
+                format!("Failed to start `{}`: {e}", resolved.display())
             }
         })?;
 
@@ -330,6 +412,26 @@ mod tests {
             safe_join(root, "tests/test_a.py").unwrap(),
             root.join("tests/test_a.py")
         );
+    }
+
+    #[test]
+    fn an_interpreter_resolves_with_the_path_a_finder_launch_gets() {
+        // A Finder-launched app inherits no useful PATH. Both interpreters still have to
+        // be found, or "Run tests" reports node missing on a machine that has three
+        // copies of it.
+        assert!(
+            resolve_program_in("python3", None).is_some(),
+            "python3 must resolve without a shell PATH"
+        );
+        assert!(
+            resolve_program_in("node", None).is_some(),
+            "node must resolve without a shell PATH"
+        );
+    }
+
+    #[test]
+    fn a_program_that_is_not_installed_resolves_to_nothing() {
+        assert!(resolve_program_in("definitely-not-an-interpreter", None).is_none());
     }
 
     #[test]
