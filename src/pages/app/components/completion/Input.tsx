@@ -669,8 +669,8 @@ export const Input = ({
                           key={message.id}
                           className={`p-3 rounded-lg text-sm ${
                             message.role === "user"
-                              ? "bg-primary/10 border-l-4 border-primary"
-                              : "bg-muted/50"
+                              ? "border border-primary/25 bg-primary/[0.06]"
+                              : "border border-input/40 bg-muted/40"
                           }`}
                         >
                           <div className="flex items-center gap-2 mb-2">
