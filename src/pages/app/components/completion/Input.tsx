@@ -14,6 +14,7 @@ import {
 } from "@/components";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
+import { ProfileChip } from "./ProfileChip";
 import {
   playHapticClick,
   playActionChime,
@@ -39,6 +40,12 @@ const PROMPT_MIN_HEIGHT = 36;
  * it did not also cost.
  */
 const PROMPT_MAX_HEIGHT = 64;
+
+/** What Cmd+Enter opens: room to read a long prompt back before sending it. */
+const COMPOSER_MAX_HEIGHT = 320;
+
+/** Below this the readout is noise; a one-line prompt does not need measuring. */
+const READOUT_MIN_CHARS = 80;
 
 
 const SLASH_COMMANDS = [
@@ -91,6 +98,10 @@ export const Input = ({
   const [clipboardSnippet, setClipboardSnippet] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+
+  /** Wrapped lines, not newlines: what the reader cannot see is what they wrapped into. */
+  const [visualLines, setVisualLines] = useState(1);
 
   /** Clipboard text already pushed at the user, so it is never pushed twice. */
   const offeredClipboardRef = useRef<string | null>(null);
@@ -145,20 +156,38 @@ export const Input = ({
   }, [clipboardSnippet]);
 
   // WKWebView does not honor `field-sizing: content`, so grow the box here.
-  const growToFitContent = useCallback((element: HTMLTextAreaElement | null) => {
-    if (!element) return;
-    element.style.height = `${PROMPT_MIN_HEIGHT}px`;
-    if (!element.value) return;
-    if (element.scrollHeight <= element.clientHeight) return;
-    element.style.height = `${Math.min(
-      element.scrollHeight,
-      PROMPT_MAX_HEIGHT
-    )}px`;
-  }, []);
+  //
+  // The line count is taken here rather than in render: this is already the one place
+  // that reads layout, and counting newlines instead would report "1 line" for a prompt
+  // that wrapped into six.
+  const growToFitContent = useCallback(
+    (element: HTMLTextAreaElement | null) => {
+      if (!element) return;
+      element.style.height = `${PROMPT_MIN_HEIGHT}px`;
+
+      const lineHeight =
+        parseFloat(getComputedStyle(element).lineHeight) || PROMPT_MIN_HEIGHT;
+      setVisualLines(
+        element.value ? Math.max(1, Math.round(element.scrollHeight / lineHeight)) : 1
+      );
+
+      if (!element.value) return;
+      if (element.scrollHeight <= element.clientHeight) return;
+      element.style.height = `${Math.min(
+        element.scrollHeight,
+        composerOpen ? COMPOSER_MAX_HEIGHT : PROMPT_MAX_HEIGHT
+      )}px`;
+    },
+    [composerOpen]
+  );
 
   useEffect(() => {
     growToFitContent(inputRef.current);
   }, [input, growToFitContent, inputRef]);
+
+  useEffect(() => {
+    if (!input) setComposerOpen(false);
+  }, [input]);
 
   // The peek exists for "I summoned Omni with nothing typed", so it is armed by
   // the HUD appearing and by nothing else. It used to depend on `input` and bail
@@ -254,7 +283,10 @@ export const Input = ({
               </div>
             )}
 
-            <div className="relative">
+            <div className="relative flex items-start gap-2">
+              <div className="pt-1">
+                <ProfileChip />
+              </div>
               <Textarea
                 ref={inputRef}
                 rows={1}
@@ -317,6 +349,21 @@ export const Input = ({
                     return;
                   }
 
+                  // Cmd+Enter is the deliberate expand. Growth used to happen to the
+                  // user; this makes it something they ask for, and the bar stays a bar
+                  // until they do.
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    setComposerOpen((open) => !open);
+                    return;
+                  }
+
+                  if (e.key === "Escape" && composerOpen) {
+                    e.preventDefault();
+                    setComposerOpen(false);
+                    return;
+                  }
+
                   if (e.key === "Enter" && !e.shiftKey) playHapticClick();
                   handleKeyPress(e);
                 }}
@@ -331,7 +378,7 @@ export const Input = ({
                 }
                 onPaste={handlePaste}
                 disabled={isLoading || isHidden}
-                className={`h-9 min-h-9 resize-none overflow-y-auto border-primary/50 py-1 leading-snug focus-visible:border-ring/60 focus-visible:ring-ring dark:border-input/80 dark:focus-visible:ring-ring/60 ${
+                className={`h-9 min-h-9 flex-1 resize-none overflow-y-auto border-primary/50 py-1 leading-snug focus-visible:border-ring/60 focus-visible:ring-ring dark:border-input/80 dark:focus-visible:ring-ring/60 ${
                   currentConversationId && conversationHistory.length > 0
                     ? "pr-14"
                     : "pr-2"
@@ -510,6 +557,25 @@ export const Input = ({
                 </div>
               )}
             </div>
+
+            {/* What the prompt box used to say by growing. A capped box hides how much
+                is above the fold, so the size is stated instead of performed, and the
+                way to see all of it is named next to it. */}
+            {input.length >= READOUT_MIN_CHARS && (
+              <div
+                data-slot="prompt-readout"
+                className="mt-1 flex items-center justify-end gap-2 pr-1 font-mono text-[10px] text-muted-foreground/60"
+              >
+                <span>
+                  {visualLines} {visualLines === 1 ? "line" : "lines"} ·{" "}
+                  {formatTokenCount(Math.round(input.length / 4))}
+                </span>
+                <span className="opacity-70">
+                  {navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl"}
+                  ↩ {composerOpen ? "collapses" : "expands"}
+                </span>
+              </div>
+            )}
           </div>
         </PopoverTrigger>
 

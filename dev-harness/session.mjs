@@ -24,7 +24,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const APP_URL = process.env.HUD_URL ?? "http://localhost:1420/";
 const PROXY = process.env.HARNESS_PROXY ?? "http://127.0.0.1:1422";
 
-const HUD_WIDTH = 600;
+const HUD_WIDTH = 1200;
 const HUD_RESTING_HEIGHT = 54;
 
 /** A turn is done when loading stops; this is the ceiling on waiting for that. */

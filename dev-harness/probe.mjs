@@ -16,7 +16,7 @@ const OUT = join(HERE, "out");
 const APP_URL = process.env.HUD_URL ?? "http://localhost:1420/";
 
 /** The HUD window size configured in tauri.conf.json. */
-const HUD_WIDTH = 600;
+const HUD_WIDTH = 1200;
 const HUD_RESTING_HEIGHT = 54;
 const PROMPT_PLACEHOLDER = "Ask anything or type /";
 
@@ -743,8 +743,13 @@ const run = async () => {
     pre.setAttribute("data-streamdown", "code-block-body");
     pre.className = "p-4 text-sm";
     const code = document.createElement("code");
+    // Long enough to overflow the HUD at its current width. It used to be half this,
+    // which stopped overflowing when the HUD widened and quietly turned the assertion
+    // into a check that a fitting line fits.
     code.textContent =
-      "const x = someFunction(argumentOne, argumentTwo, argumentThree, argumentFour, argumentFive);";
+      "const x = someFunction(argumentOne, argumentTwo, argumentThree, argumentFour, " +
+      "argumentFive, argumentSix, argumentSeven, argumentEight, argumentNine, argumentTen, " +
+      "argumentEleven, argumentTwelve, argumentThirteen, argumentFourteen);";
     pre.appendChild(code);
     host.appendChild(pre);
     document.body.appendChild(host);

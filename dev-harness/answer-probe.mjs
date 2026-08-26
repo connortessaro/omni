@@ -28,7 +28,7 @@ const APP_URL = process.env.HUD_URL ?? "http://localhost:1420/";
 const THEME = process.env.HUD_THEME ?? "light";
 
 /** The HUD window size configured in tauri.conf.json. */
-const HUD_WIDTH = 600;
+const HUD_WIDTH = 1200;
 const HUD_RESTING_HEIGHT = 54;
 
 /** Tall enough for the panel; the native window grows the same way. */
@@ -261,7 +261,7 @@ const readPanel = (page) =>
       resizeHeights: (window.__HARNESS__?.callsFor("set_window_height") ?? []).map(
         (call) => call.args?.height
       ),
-      // The panel is 600px wide and cannot scroll sideways, so anything wider than
+      // The panel is as wide as the HUD and cannot scroll sideways, so anything wider
       // its own box is text the reader cannot reach.
       overflowPx: response
         ? Math.max(0, response.scrollWidth - response.clientWidth)
@@ -311,7 +311,7 @@ const main = async () => {
         panel.text.slice(0, 120).replace(/\n/g, " ")
       );
       record(
-        "the panel fits the 600px HUD",
+        "the panel fits the HUD width",
         panel.overflowPx === 0,
         `${panel.overflowPx}px of horizontal overflow`
       );
@@ -336,7 +336,7 @@ const main = async () => {
         panel.text.slice(0, 120).replace(/\n/g, " ")
       );
       record(
-        "the code panel fits the 600px HUD",
+        "the code panel fits the HUD width",
         panel.overflowPx === 0,
         `${panel.overflowPx}px of horizontal overflow`
       );
@@ -358,7 +358,7 @@ const main = async () => {
         `shape=${panel.shape} rail=${JSON.stringify(panel.railPaths)}`
       );
       record(
-        "the files panel fits the 600px HUD",
+        "the files panel fits the HUD width",
         panel.overflowPx === 0,
         `${panel.overflowPx}px of horizontal overflow`
       );
