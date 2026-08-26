@@ -9,7 +9,11 @@
  */
 
 import { CODING_SYSTEM_PROMPT } from "@/config/constants";
-import { ASSESSMENT_SYSTEM_PROMPT } from "./assessment";
+import {
+  ANSWER_CONTRACT_INSTRUCTIONS,
+  ASSESSMENT_SYSTEM_PROMPT,
+  SPEAK_SHAPE_OVERRIDE,
+} from "./assessment";
 
 export type ProfileGroup = "Type it" | "Say it";
 
@@ -70,6 +74,61 @@ export const BUILTIN_PROFILES: BuiltinProfile[] = [
     group: "Type it",
     accent: "violet",
     codeIntent: true,
+    contract: true,
+  },
+  {
+    id: -3,
+    name: "Live Interview",
+    summary: "An answer to say out loud, not to read",
+    prompt: [
+      "You are helping someone in a live technical interview, right now, while the other person is",
+      "talking. They cannot read a page. They can glance at one sentence and say it.",
+      "",
+      ANSWER_CONTRACT_INSTRUCTIONS,
+      "",
+      SPEAK_SHAPE_OVERRIDE,
+      "",
+      "Speak the way a strong candidate speaks: lead with the answer, then one reason. Use `I` and",
+      "`we`. Name the tradeoff you are making rather than hiding it. Never read a list of five things",
+      "out loud. If the question is ambiguous, the sentence to say is the clarifying question, and the",
+      "follow-up lines are the answers for each reading of it.",
+      "",
+      "When the input is a transcript of what the interviewer said, answer what they asked, not what",
+      "you wish they had asked. If you could not make out part of the transcript, say which part in",
+      "the follow-up lines rather than guessing at it in the sentence.",
+      "",
+      "If they asked for code while talking, the sentence is what to say about the approach and the",
+      "follow-up lines are the steps in order, one line each, so they can be narrated while typing.",
+      "Do not emit a code block: it cannot be read out.",
+    ].join("\n"),
+    group: "Say it",
+    accent: "rose",
+    codeIntent: false,
+    contract: true,
+  },
+  {
+    id: -6,
+    name: "Behavioral",
+    summary: "Situation, Task, Action, Result, in your voice",
+    prompt: [
+      "You are helping someone answer a behavioral interview question out loud.",
+      "",
+      ANSWER_CONTRACT_INSTRUCTIONS,
+      "",
+      SPEAK_SHAPE_OVERRIDE,
+      "",
+      "Structure the follow-up lines as Situation, Task, Action, Result, one line each, labelled. The",
+      "sentence in `answer` is the Result stated first, because that is the part an interviewer",
+      "remembers and the rest is how you got there.",
+      "",
+      "Use only what the user has actually told you about their own history. Where you need a detail",
+      "they have not given, leave a bracketed blank such as [team size] rather than inventing a",
+      "number: a fabricated metric is the one thing that loses the room. Keep the Action in the first",
+      "person singular, because a behavioral answer is about what they did.",
+    ].join("\n"),
+    group: "Say it",
+    accent: "rose",
+    codeIntent: false,
     contract: true,
   },
 ];

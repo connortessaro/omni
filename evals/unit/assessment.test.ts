@@ -229,3 +229,56 @@ test("the Assessment profile ships the same contract the parser reads", async ()
   assert.equal(profile.prompt, ASSESSMENT_SYSTEM_PROMPT);
   assert.ok(profile.id < 0, "built-in ids must be negative");
 });
+
+test("a spoken answer is a shape of its own", async () => {
+  const { parseAnswer } = await load();
+  const parsed = parseAnswer(
+    [
+      "```omni",
+      "shape: speak",
+      "answer: I'd reach for a hash map, because the lookup has to be constant time.",
+      "confidence: high",
+      "```",
+      "",
+      "If they push on memory, the fallback is sorting first and using two pointers.",
+    ].join("\n")
+  );
+
+  assert.ok(parsed);
+  assert.equal(parsed.shape, "speak");
+  assert.match(parsed.headline, /hash map/);
+  assert.match(parsed.body, /two pointers/);
+});
+
+test("a design answer is a shape of its own", async () => {
+  const { parseAnswer } = await load();
+  const parsed = parseAnswer(
+    [
+      "```omni",
+      "shape: diagram",
+      "answer: Fan out on write",
+      "```",
+      "",
+      "```mermaid",
+      "graph TD",
+      "  A-->B",
+      "```",
+    ].join("\n")
+  );
+  assert.ok(parsed);
+  assert.equal(parsed.shape, "diagram");
+});
+
+test("the two declared-only shapes are never inferred", async () => {
+  const { parseAnswer } = await load();
+  // `speak` and `diagram` change how the panel reads an answer, so a model that forgot to
+  // declare one must fall back to a shape that renders everything, not to one that folds
+  // the body away.
+  const parsed = parseAnswer(
+    ["```omni", "answer: no shape declared", "```", "", "Some prose with no fences."].join(
+      "\n"
+    )
+  );
+  assert.ok(parsed);
+  assert.ok(["prose", "code", "files", "choice"].includes(parsed.shape));
+});

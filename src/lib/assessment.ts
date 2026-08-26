@@ -11,14 +11,22 @@
  */
 
 /**
- * Four shapes cover every task type an assessment throws at the reader, and each
- * one wants a different thing on screen first:
+ * Six shapes cover every task an assessment or an interview throws at the reader, and
+ * each one wants a different thing on screen first:
  * - `choice`   the option letters (multiple choice, matrix, output-only)
  * - `code`     one runnable block (single function, recovery, bugfix, SQL, regex)
  * - `files`    several blocks, each belonging to a path (filesystem, frontend)
- * - `prose`    text to read or transcribe (writing, conversation, whiteboard)
+ * - `prose`    text to read or transcribe (writing, conversation)
+ * - `speak`    a sentence to say out loud, with the rest held back
+ * - `diagram`  a design that leads with its graph
  */
-export type AnswerShape = "choice" | "code" | "files" | "prose";
+export type AnswerShape =
+  | "choice"
+  | "code"
+  | "files"
+  | "prose"
+  | "speak"
+  | "diagram";
 
 export type AnswerConfidence = "high" | "medium" | "low";
 
@@ -50,7 +58,14 @@ export interface CodeBlockRef {
   code: string;
 }
 
-const SHAPES: AnswerShape[] = ["choice", "code", "files", "prose"];
+const SHAPES: AnswerShape[] = [
+  "choice",
+  "code",
+  "files",
+  "prose",
+  "speak",
+  "diagram",
+];
 const CONFIDENCES: AnswerConfidence[] = ["high", "medium", "low"];
 
 const OPEN_FENCE = /^[ \t]*```[ \t]*omni[ \t]*$/m;
@@ -86,6 +101,26 @@ export const ANSWER_CONTRACT_INSTRUCTIONS = [
   "file you put it in. The reader runs that block locally before transcribing anything.",
   "Never abbreviate code: no ellipses, no `// rest unchanged`. Say `confidence: low` rather than guessing",
   "silently, and name the part you are unsure about in one line.",
+].join("\n");
+
+/**
+ * Appended by the profiles that pin a shape the generic contract does not offer. Kept as
+ * an override rather than a fifth and sixth entry in the shape menu above: an assessment
+ * answer must never come back as `speak`, and a spoken answer must never come back as
+ * `files`.
+ */
+export const SPEAK_SHAPE_OVERRIDE = [
+  "Override: always write `shape: speak` on this profile. Ignore the other shapes.",
+  "`answer` is the single sentence to say out loud, in first person, plain spoken English:",
+  "no markdown, no bullets, no code fences, no headings. Aim for what fits in about fifteen",
+  "seconds. Everything after the block is what to say only if they follow up, one short",
+  "line per point.",
+].join("\n");
+
+export const DIAGRAM_SHAPE_OVERRIDE = [
+  "Override: always write `shape: diagram` on this profile. Ignore the other shapes.",
+  "`answer` is the one-line thesis of the design. Immediately after the block, before any",
+  "prose, emit a ```mermaid graph of the architecture. Prose comes after the graph.",
 ].join("\n");
 
 /**

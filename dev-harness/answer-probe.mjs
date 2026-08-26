@@ -130,6 +130,17 @@ const CASES = {
     "```",
   ].join("\n"),
 
+  speak: [
+    "```omni",
+    "shape: speak",
+    "answer: I'd use a hash map, because the lookup has to stay constant time.",
+    "confidence: high",
+    "```",
+    "",
+    "If they push on memory: sort first, then two pointers, O(1) extra space.",
+    "If they push on collisions: open addressing keeps it cache friendly.",
+  ].join("\n"),
+
   // Long enough to overflow the panel's 488px cap several times over, which is the
   // only way to see whether the panel scrolls at all.
   long: [
@@ -191,6 +202,11 @@ const answerTurn = async (browser, body, run) => {
   const page = await context.newPage();
   await page.goto(APP_URL, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("textarea", { timeout: 15_000 });
+
+  // Cold vite compiles modules on demand, so the first paint of a freshly edited app can
+  // race the height measurement and record a spurious open-then-collapse. Scoping the log
+  // to the turn is also what makes "one answer does not thrash" measure one answer.
+  await page.evaluate(() => window.__HARNESS__?.reset());
 
   // The argument matters: with a bare `/answer` the slash menu is still open, and
   // Enter accepts the command instead of sending the turn.
@@ -499,6 +515,35 @@ const main = async () => {
       );
 
       await shot(page, "answer-long.png");
+      await context.close();
+    }
+
+    // Speak: the sentence is the payload and the follow-ups stay folded, because reading a
+    // list out loud is exactly what the profile exists to prevent.
+    {
+      const { context, page } = await answerTurn(browser, CASES.speak);
+      const panel = await readPanel(page);
+      await shot(page, "answer-speak.png");
+
+      record(
+        "a spoken answer leads with the sentence, folded",
+        panel.shape === "speak" &&
+          /hash map/.test(panel.headline ?? "") &&
+          panel.hasToggle &&
+          !panel.bodyShown,
+        `shape=${panel.shape} toggle=${panel.hasToggle} bodyShown=${panel.bodyShown}`
+      );
+      record(
+        "a spoken answer is set large enough to read at a glance",
+        (panel.headlineFontPx ?? 0) >= 17,
+        `${panel.headlineFontPx}px`
+      );
+      record(
+        "a spoken answer offers nothing to run",
+        !panel.text.includes("Run tests"),
+        panel.text.slice(0, 80).replace(/\n/g, " ")
+      );
+
       await context.close();
     }
 

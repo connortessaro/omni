@@ -137,3 +137,29 @@ test("the derived built-in list still matches the registry", async () => {
     assert.equal(shipped.prompt, profile.prompt);
   }
 });
+
+test("the Live Interview profile answers out loud, not on the page", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const profile = BUILTIN_PROFILES.find((p) => p.name === "Live Interview");
+  assert.ok(profile, "a built-in named Live Interview must ship");
+  assert.equal(profile.id, -3);
+  assert.equal(profile.group, "Say it");
+  assert.equal(profile.contract, true);
+  // The whole point of the profile: the answer is spoken, so it must forbid the markdown
+  // the rest of the app is built to render.
+  assert.match(profile.prompt, /shape: speak/);
+  assert.match(profile.prompt, /markdown/i);
+  assert.match(profile.prompt, /out loud|aloud|spoken/i);
+});
+
+test("the Behavioral profile asks for the four STAR parts by name", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const profile = BUILTIN_PROFILES.find((p) => p.name === "Behavioral");
+  assert.ok(profile, "a built-in named Behavioral must ship");
+  assert.equal(profile.id, -6);
+  for (const part of ["Situation", "Task", "Action", "Result"]) {
+    assert.ok(profile.prompt.includes(part), `Behavioral must name ${part}`);
+  }
+  // A fabricated metric is the one thing that loses the room.
+  assert.match(profile.prompt, /invent|fabricat/i);
+});

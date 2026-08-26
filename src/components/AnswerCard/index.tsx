@@ -56,6 +56,18 @@ const SHAPE_STYLES: Record<
       "border-emerald-600/25 bg-emerald-600/[0.06] dark:border-emerald-400/25 dark:bg-emerald-400/[0.08]",
     accent: "text-emerald-700 dark:text-emerald-300",
   },
+  speak: {
+    label: "Say this",
+    surface:
+      "border-rose-500/25 bg-rose-500/[0.06] dark:border-rose-400/25 dark:bg-rose-400/[0.08]",
+    accent: "text-rose-700 dark:text-rose-300",
+  },
+  diagram: {
+    label: "Design",
+    surface:
+      "border-indigo-500/25 bg-indigo-500/[0.06] dark:border-indigo-400/25 dark:bg-indigo-400/[0.08]",
+    accent: "text-indigo-700 dark:text-indigo-300",
+  },
 };
 
 // Both themes ship, and the HUD sits over whatever is behind it, so every accent
@@ -118,10 +130,12 @@ const Verdict = ({
   const style = SHAPE_STYLES[answer.shape];
   const bodyRef = useRef<HTMLDivElement>(null);
 
-  // A choice answer is the one shape whose payload fits in the rail entirely, so the
-  // reasoning starts folded: the reader wants the letter, and opens the argument only
-  // when the letter surprises them.
-  const [showBody, setShowBody] = useState(answer.shape !== "choice");
+  // `choice` and `speak` are the shapes whose payload fits in the rail entirely, so the
+  // rest starts folded: the reader wants the letter or the sentence, and opens the
+  // argument only when it surprises them.
+  const [showBody, setShowBody] = useState(
+    answer.shape !== "choice" && answer.shape !== "speak"
+  );
 
   const blocks = useMemo(
     () => collectCodeBlocks(answer.body).filter((block) => block.path),
@@ -137,12 +151,16 @@ const Verdict = ({
     });
   }, []);
 
-  // Copying the letter is the whole job on a choice question; on a code question it is
-  // the first block, which is the part being transcribed into the editor.
-  const copyPayload =
-    answer.shape === "choice" || answer.shape === "prose"
-      ? answer.headline
-      : collectCodeBlocks(answer.body)[0]?.code || answer.headline;
+  // Copying the letter or the sentence is the whole job on those shapes; on a code answer
+  // it is the first block, which is the part being transcribed into the editor.
+  const copiesHeadline =
+    answer.shape === "choice" ||
+    answer.shape === "prose" ||
+    answer.shape === "speak" ||
+    answer.shape === "diagram";
+  const copyPayload = copiesHeadline
+    ? answer.headline
+    : collectCodeBlocks(answer.body)[0]?.code || answer.headline;
 
   const headlineIsShort = answer.headline.length <= HEADLINE_BIG_LIMIT;
 
@@ -219,6 +237,8 @@ const Verdict = ({
             className={
               answer.shape === "choice" && headlineIsShort
                 ? "mt-1 break-words font-mono text-2xl font-semibold leading-tight text-foreground"
+                : answer.shape === "speak"
+                ? "mt-1 break-words text-lg leading-snug text-foreground"
                 : "mt-1 break-words text-sm leading-snug text-foreground/90"
             }
           >
@@ -347,7 +367,7 @@ const Verdict = ({
         </ul>
       )}
 
-      {answer.body && answer.shape === "choice" && (
+      {answer.body && (answer.shape === "choice" || answer.shape === "speak") && (
         <button
           type="button"
           data-slot="answer-body-toggle"
@@ -360,7 +380,11 @@ const Verdict = ({
           ) : (
             <ChevronRight className="size-3" aria-hidden="true" />
           )}
-          {showBody ? "Hide reasoning" : "Show reasoning"}
+          {showBody
+            ? "Hide the rest"
+            : answer.shape === "speak"
+            ? "If they follow up"
+            : "Show reasoning"}
         </button>
       )}
 
