@@ -20,10 +20,12 @@
 
 * **HUD Overlay**: Summon a floating command bar anywhere via `⌘ + \` (customizable).
 * **Zero Telemetry**: Keys and chats stay on disk in SQLite (`omni.db`). No tracking, no license server, no usage reporting.
-* **Slash Commands**: `/solve` (multi-step, with tools), `/fix`, `/commit`, `/refactor`, `/explain`, `/code`, `/summarize`, `/translate`, `/regex`, `/clear`.
+* **Slash Commands**: `/solve` (multi-step, with tools), `/answer` (verdict-first assessment answers), `/fix`, `/commit`, `/refactor`, `/explain`, `/code`, `/summarize`, `/translate`, `/regex`, `/clear`.
 * **Keyboard History**: Press `↑` / `↓` in the input box to cycle through recent prompts.
 * **Model Switching**: Pick any model your configured key has access to, without re-entering it. Local Ollama models are detected at `http://127.0.0.1:11434`.
 * **Vision**: Screenshot a desktop area (`⌘ + Shift + S`) and ask about it.
+* **Assessment Answers**: The `Assessment` prompt profile and `/answer` return the verdict first: the chosen option letters, the runnable solution, or the files touched, with the reasoning folded behind it and a jump rail for multi-file answers.
+* **Run Before You Trust**: A Python, JavaScript or TypeScript answer gets a **Run tests** button. It writes the answer's files to a scratch directory, runs the test file with a 10s timeout, and reports `12 passed` or the assertion that broke. The code runs locally as you, with no network jail: read it before you click.
 
 ---
 

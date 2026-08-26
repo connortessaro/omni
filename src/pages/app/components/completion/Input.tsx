@@ -10,6 +10,7 @@ import {
   Markdown,
   Switch,
   CopyButton,
+  AnswerCard,
 } from "@/components";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
@@ -42,6 +43,7 @@ const SLASH_COMMANDS = [
   { command: "/translate", description: "Translate to English / target", example: "/translate <text>" },
   { command: "/regex", description: "Explain or build regex", example: "/regex <pattern>" },
   { command: "/solve", description: "Work step by step, using tools", example: "/solve <problem>" },
+  { command: "/answer", description: "Answer an assessment question", example: "/answer [question]" },
   { command: "/clear", description: "Clear conversation", example: "/clear" },
 ];
 
@@ -605,7 +607,7 @@ export const Input = ({
               {response && (
                 <div>
                   <div data-hud-response>
-                    <Markdown>{response}</Markdown>
+                    <AnswerCard response={response} isStreaming={isLoading} />
                   </div>
                   {!isLoading && (
                     <div className="flex flex-col gap-2 pt-3 border-t border-border/40 mt-3">

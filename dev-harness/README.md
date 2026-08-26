@@ -30,6 +30,26 @@ npm run hud:probe  # in another
 Screenshots land in `dev-harness/out/`. The probe exits non-zero on failure, so
 it works as a pre-commit or CI gate.
 
+## The answer panel
+
+`hud:probe` covers the bar at rest. `answer:probe` covers the panel that opens
+over it, driving a scripted assessment answer of each shape through the real UI:
+
+```bash
+npm run dev:harness    # in one shell
+npm run answer:probe   # in another
+HUD_THEME=dark npm run answer:probe
+```
+
+The provider is scripted through `__HARNESS_STREAM__` in `tauri-mock.js`, so
+nothing is billed and the answer is byte-identical every run. It checks that the
+contract block never reaches the markdown renderer, that a multiple-choice answer
+leads with its letter and folds its reasoning, that a multi-file answer offers a
+rail of its paths, and that an ordinary chat answer still renders as plain
+markdown.
+
+The run button is driven too: `run_code` has no browser equivalent, so the mock returns whatever `window.__HARNESS_RUN__` holds and records the request in `window.__LAST_RUN__`. That is what checks the file handed to the interpreter is the one that does the asserting.
+
 ## WebKit, not Chromium
 
 `probe.mjs` uses Playwright's WebKit build because the app ships inside

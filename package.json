@@ -24,6 +24,7 @@
     "eval:run": "node evals/scripts/run-eval.ts",
     "hud:probe": "node dev-harness/probe.mjs",
     "ttft:probe": "node dev-harness/ttft-probe.mjs",
+    "answer:probe": "node dev-harness/answer-probe.mjs",
     "csp:probe": "node dev-harness/csp-probe.mjs",
     "audio:indicator-probe": "zsh dev-harness/indicator-probe.sh",
     "check:commands": "node scripts/check-commands.mjs",
