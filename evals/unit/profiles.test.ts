@@ -176,3 +176,47 @@ test("the System Design profile asks for numbers and a graph", async () => {
   assert.match(profile.prompt, /estimate|per second|QPS|back-of-envelope/i);
   assert.match(profile.prompt, /bottleneck/i);
 });
+
+test("the Debug profile forbids rewriting what it was given", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const profile = BUILTIN_PROFILES.find((p) => p.name === "Debug");
+  assert.ok(profile, "a built-in named Debug must ship");
+  assert.equal(profile.id, -4);
+  assert.equal(profile.codeIntent, true);
+  // The Code profile's instinct is to show the whole changed function. On a bugfix that
+  // hides the fix inside a rewrite, and the reader cannot tell what actually changed.
+  assert.match(profile.prompt, /smallest|minimal/i);
+  assert.match(profile.prompt, /root cause/i);
+  assert.match(profile.prompt, /do not rewrite|never rewrite|without rewriting/i);
+});
+
+test("the SQL profile locks a dialect and refuses an ORM", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const profile = BUILTIN_PROFILES.find((p) => p.name === "SQL");
+  assert.ok(profile, "a built-in named SQL must ship");
+  assert.equal(profile.id, -7);
+  assert.match(profile.prompt, /MySQL/);
+  assert.match(profile.prompt, /PostgreSQL|Postgres/);
+  assert.match(profile.prompt, /ORM/);
+});
+
+test("the Frontend profile matches the starter code and stays drivable", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const profile = BUILTIN_PROFILES.find((p) => p.name === "Frontend");
+  assert.ok(profile, "a built-in named Frontend must ship");
+  assert.equal(profile.id, -8);
+  // CodeSignal hands you a blank file, HackerRank often hands you a React component. A
+  // profile that hardcodes either one is wrong on the other platform.
+  assert.match(profile.prompt, /starter/i);
+  // The graders drive the page with a headless browser, so the markup has to be findable.
+  assert.match(profile.prompt, /selector|data-testid/i);
+});
+
+test("the registry is complete and every id is accounted for", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  assert.equal(BUILTIN_PROFILES.length, 8);
+  assert.deepEqual(
+    BUILTIN_PROFILES.map((p) => p.id).sort((a, b) => b - a),
+    [-1, -2, -3, -4, -5, -6, -7, -8]
+  );
+});
