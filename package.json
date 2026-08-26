@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:build:signed": "zsh scripts/build-signed.sh",
+    "install:local": "zsh scripts/install-local.sh",
     "signing:create": "zsh scripts/create-signing-identity.sh",
     "privacy:reset": "zsh scripts/reset-privacy-grants.sh",
     "eval:typecheck": "tsc -p evals/tsconfig.json",
