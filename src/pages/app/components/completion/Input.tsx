@@ -30,7 +30,15 @@ const PROMPT_PLACEHOLDER = "Ask anything or type /";
 
 /** One line of the prompt box, matching the icon buttons beside it. */
 const PROMPT_MIN_HEIGHT = 36;
-const PROMPT_MAX_HEIGHT = 320;
+
+/**
+ * Three lines, then it scrolls. At 320px the box grew to nine lines and took the card
+ * from 54px to 338px, so typing a paragraph turned an always-on-top overlay into a third
+ * of the screen: measured 36 -> 320px on 300 characters, across three native window
+ * resizes. Past the cap the box already scrolled internally, so the growth bought nothing
+ * it did not also cost.
+ */
+const PROMPT_MAX_HEIGHT = 64;
 
 
 const SLASH_COMMANDS = [
