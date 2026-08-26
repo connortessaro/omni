@@ -141,6 +141,23 @@ const CASES = {
     "If they push on collisions: open addressing keeps it cache friendly.",
   ].join("\n"),
 
+  diagram: [
+    "```omni",
+    "shape: diagram",
+    "answer: Fan out on write, with a pull path for the few large accounts",
+    "confidence: medium",
+    "```",
+    "",
+    "```mermaid",
+    "graph TD",
+    "  Client-->API",
+    "  API-->Queue",
+    "  Queue-->Fanout",
+    "```",
+    "",
+    "**Estimates** 10M daily users, 2 posts each, 200 followers average: 4B writes a day.",
+  ].join("\n"),
+
   // Long enough to overflow the panel's 488px cap several times over, which is the
   // only way to see whether the panel scrolls at all.
   long: [
@@ -542,6 +559,32 @@ const main = async () => {
         "a spoken answer offers nothing to run",
         !panel.text.includes("Run tests"),
         panel.text.slice(0, 80).replace(/\n/g, " ")
+      );
+
+      await context.close();
+    }
+
+    // Diagram: the graph has to reach the panel as a graph, not as a fenced block of
+    // mermaid source the reader has to imagine.
+    {
+      const { context, page } = await answerTurn(browser, CASES.diagram);
+      await page
+        .waitForSelector('[data-hud-response] svg, [data-hud-response] pre', {
+          timeout: 20_000,
+        })
+        .catch(() => {});
+      const panel = await readPanel(page);
+      await shot(page, "answer-diagram.png");
+
+      record(
+        "a design answer leads with its thesis",
+        panel.shape === "diagram" && /Fan out on write/.test(panel.headline ?? ""),
+        `shape=${panel.shape} headline=${JSON.stringify(panel.headline)}`
+      );
+      record(
+        "the design panel fits the HUD width",
+        panel.overflowPx === 0,
+        `${panel.overflowPx}px of horizontal overflow`
       );
 
       await context.close();

@@ -163,3 +163,16 @@ test("the Behavioral profile asks for the four STAR parts by name", async () => 
   // A fabricated metric is the one thing that loses the room.
   assert.match(profile.prompt, /invent|fabricat/i);
 });
+
+test("the System Design profile asks for numbers and a graph", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const profile = BUILTIN_PROFILES.find((p) => p.name === "System Design");
+  assert.ok(profile, "a built-in named System Design must ship");
+  assert.equal(profile.id, -5);
+  assert.equal(profile.group, "Say it");
+  assert.match(profile.prompt, /shape: diagram/);
+  assert.match(profile.prompt, /mermaid/);
+  // A design answer with no estimate is a list of boxes. The numbers are the design.
+  assert.match(profile.prompt, /estimate|per second|QPS|back-of-envelope/i);
+  assert.match(profile.prompt, /bottleneck/i);
+});
