@@ -33,7 +33,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, "..");
 const APP_URL = process.env.HUD_URL ?? "http://localhost:1420/";
 
-const HUD_WIDTH = 600;
+const HUD_WIDTH = 1200;
 const HUD_RESTING_HEIGHT = 54;
 
 /** A real capture-sized PNG, so the base64 arm carries a realistic payload. */

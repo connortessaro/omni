@@ -12,3 +12,4 @@ export * from "./Markdown/copy-button";
 export * from "./Icons";
 export * from "./OmniLogo";
 
+export * from "./AnswerCard";

@@ -14,7 +14,7 @@
     "windows": [
       {
         "title": "Omni - AI Assistant",
-        "width": 600,
+        "width": 1200,
         "height": 54,
         "decorations": false,
         "transparent": true,

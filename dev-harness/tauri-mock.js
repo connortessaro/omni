@@ -187,6 +187,26 @@
       },
     ],
 
+    // The real runner spawns an interpreter, which a browser has no equivalent for.
+    // A probe supplies the outcome it wants to see through window.__HARNESS_RUN__.
+    run_code: ({ language, files, entry }) => {
+      const scripted = window.__HARNESS_RUN__;
+      if (!scripted) {
+        throw new Error("run_code was called with no __HARNESS_RUN__ scripted");
+      }
+      window.__LAST_RUN__ = { language, files, entry };
+      if (scripted.error) throw new Error(scripted.error);
+      return {
+        exit_code: scripted.exit_code ?? 0,
+        stdout: scripted.stdout ?? "",
+        stderr: scripted.stderr ?? "",
+        timed_out: scripted.timed_out ?? false,
+        truncated: scripted.truncated ?? false,
+        duration_ms: scripted.duration_ms ?? 42,
+        command: scripted.command ?? "python3",
+      };
+    },
+
     provider_request: providerRequest,
     provider_request_cancel: ({ requestId }) => {
       cancelled.add(requestId);

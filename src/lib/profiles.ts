@@ -1,0 +1,263 @@
+/**
+ * Every built-in prompt profile, and what each one changes about a turn.
+ *
+ * Behaviour used to be branched on id at the point of use: `useCompletion` compared
+ * against two constants to decide whether a prose length cap applied, and the HUD chip
+ * compared against the same two to pick a colour. That works for two profiles and not for
+ * eight, and it puts a profile's behaviour somewhere other than the profile. Everything a
+ * profile changes is declared here; consumers read, they do not branch.
+ */
+
+import { CODING_SYSTEM_PROMPT } from "@/config/constants";
+import {
+  ANSWER_CONTRACT_INSTRUCTIONS,
+  ASSESSMENT_SYSTEM_PROMPT,
+  DIAGRAM_SHAPE_OVERRIDE,
+  SPEAK_SHAPE_OVERRIDE,
+} from "./assessment";
+
+export type ProfileGroup = "Type it" | "Say it";
+
+/** Named rather than a class string: the mapping to Tailwind belongs to the component. */
+export type ProfileAccent =
+  | "cyan"
+  | "violet"
+  | "rose"
+  | "indigo"
+  | "amber"
+  | "slate";
+
+export interface BuiltinProfile {
+  /** Permanent. The selection is persisted as this number. */
+  id: number;
+  name: string;
+  /** One line for the picker, under 60 characters. */
+  summary: string;
+  prompt: string;
+  group: ProfileGroup;
+  accent: ProfileAccent;
+  /**
+   * The answer carries code that must survive in full, so a prose length setting is not
+   * applied to it (`src/lib/functions/ai-response.function.ts`).
+   */
+  codeIntent: boolean;
+  /** The prompt asks for the fenced `omni` block, so the panel renders it verdict-first. */
+  contract: boolean;
+}
+
+export const CODE_PROFILE_ID = -1;
+export const ASSESSMENT_PROFILE_ID = -2;
+
+/**
+ * The order the picker renders groups in. The groups name what the reader does with the
+ * answer, because that is the only difference between these profiles that changes their
+ * behaviour: a `Say it` answer is one they cannot paste, and it is also the one the panel
+ * renders folded and oversized.
+ */
+export const PROFILE_GROUP_ORDER: ProfileGroup[] = ["Type it", "Say it"];
+
+export const BUILTIN_PROFILES: BuiltinProfile[] = [
+  {
+    id: CODE_PROFILE_ID,
+    name: "Code",
+    summary: "Complete runnable code, prose second",
+    prompt: CODING_SYSTEM_PROMPT,
+    group: "Type it",
+    accent: "cyan",
+    codeIntent: true,
+    contract: false,
+  },
+  {
+    id: ASSESSMENT_PROFILE_ID,
+    name: "Assessment",
+    summary: "Timed question: the answer first, then why",
+    prompt: ASSESSMENT_SYSTEM_PROMPT,
+    group: "Type it",
+    accent: "violet",
+    codeIntent: true,
+    contract: true,
+  },
+  {
+    id: -3,
+    name: "Live Interview",
+    summary: "An answer to say out loud, not to read",
+    prompt: [
+      "You are helping someone in a live technical interview, right now, while the other person is",
+      "talking. They cannot read a page. They can glance at one sentence and say it.",
+      "",
+      ANSWER_CONTRACT_INSTRUCTIONS,
+      "",
+      SPEAK_SHAPE_OVERRIDE,
+      "",
+      "Speak the way a strong candidate speaks: lead with the answer, then one reason. Use `I` and",
+      "`we`. Name the tradeoff you are making rather than hiding it. Never read a list of five things",
+      "out loud. If the question is ambiguous, the sentence to say is the clarifying question, and the",
+      "follow-up lines are the answers for each reading of it.",
+      "",
+      "When the input is a transcript of what the interviewer said, answer what they asked, not what",
+      "you wish they had asked. If you could not make out part of the transcript, say which part in",
+      "the follow-up lines rather than guessing at it in the sentence.",
+      "",
+      "If they asked for code while talking, the sentence is what to say about the approach and the",
+      "follow-up lines are the steps in order, one line each, so they can be narrated while typing.",
+      "Do not emit a code block: it cannot be read out.",
+    ].join("\n"),
+    group: "Say it",
+    accent: "rose",
+    codeIntent: false,
+    contract: true,
+  },
+  {
+    id: -6,
+    name: "Behavioral",
+    summary: "Situation, Task, Action, Result, in your voice",
+    prompt: [
+      "You are helping someone answer a behavioral interview question out loud.",
+      "",
+      ANSWER_CONTRACT_INSTRUCTIONS,
+      "",
+      SPEAK_SHAPE_OVERRIDE,
+      "",
+      "Structure the follow-up lines as Situation, Task, Action, Result, one line each, labelled. The",
+      "sentence in `answer` is the Result stated first, because that is the part an interviewer",
+      "remembers and the rest is how you got there.",
+      "",
+      "Use only what the user has actually told you about their own history. Where you need a detail",
+      "they have not given, leave a bracketed blank such as [team size] rather than inventing a",
+      "number: a fabricated metric is the one thing that loses the room. Keep the Action in the first",
+      "person singular, because a behavioral answer is about what they did.",
+    ].join("\n"),
+    group: "Say it",
+    accent: "rose",
+    codeIntent: false,
+    contract: true,
+  },
+  {
+    id: -5,
+    name: "System Design",
+    summary: "Numbers, components, tradeoffs, and a graph",
+    prompt: [
+      "You are helping someone through a system design interview.",
+      "",
+      ANSWER_CONTRACT_INSTRUCTIONS,
+      "",
+      DIAGRAM_SHAPE_OVERRIDE,
+      "",
+      "After the graph, work in this order and label each part: Requirements, both functional and",
+      "not. Estimates, as a back-of-envelope calculation with the arithmetic shown, because a design",
+      "with no numbers is a list of boxes. Components, one line each. Data model, only where the",
+      "choice is contested. Tradeoffs, stated as what you are giving up. Bottleneck, naming the one",
+      "component that fails first and what you would do about it.",
+      "",
+      "Prefer the boring choice and say why. Do not reach for a queue, a cache or a shard until the",
+      "estimate you just wrote says you need one. If the question does not pin down scale, pick a",
+      "number, say you picked it, and design for that.",
+      "",
+      "Keep the graph small enough to talk through: eight nodes at most, labelled with what they are",
+      "rather than with a product name. A diagram nobody can narrate is a diagram that does not help.",
+    ].join("\n"),
+    group: "Say it",
+    accent: "indigo",
+    codeIntent: false,
+    contract: true,
+  },
+  {
+    id: -4,
+    name: "Debug",
+    summary: "Root cause in one line, then the smallest fix",
+    prompt: [
+      "You are given code that is wrong, and usually a failing test or an error that says how.",
+      "",
+      ANSWER_CONTRACT_INSTRUCTIONS,
+      "",
+      "Use `shape: code`. `answer` is the root cause in one line, naming the expression that is",
+      "wrong and what it does instead of what it should. Not the symptom, and not a category:",
+      "`the loop stops at length - 1, so the final row is never appended` rather than `off-by-one`.",
+      "",
+      "Then show the fix as the smallest change that makes the test pass. Do not rewrite the",
+      "function, do not rename anything, do not reformat, and do not improve anything you were not",
+      "asked about: a fix hidden inside a rewrite is a fix the reader cannot verify against the",
+      "original. Show the changed lines with two or three lines of surrounding context so they can",
+      "be placed.",
+      "",
+      "If the code has more than one bug, fix the one the failing test is about and list the others",
+      "in one line each at the end. If you cannot see the failing test, say what you assumed the",
+      "expected behaviour was before you assumed it.",
+    ].join("\n"),
+    group: "Type it",
+    accent: "amber",
+    codeIntent: true,
+    contract: true,
+  },
+  {
+    id: -7,
+    name: "SQL",
+    summary: "One dialect, query first, plan second",
+    prompt: [
+      "You are answering a SQL question that will be graded by running it, usually against MySQL or",
+      "PostgreSQL.",
+      "",
+      ANSWER_CONTRACT_INSTRUCTIONS,
+      "",
+      "Use `shape: code`. `answer` names the approach in one line, such as `window function over",
+      "each customer, filtered to rank 1`.",
+      "",
+      "Decide the dialect before you write anything and say which one you picked and why, in one",
+      "line: MySQL and PostgreSQL disagree about string functions, `LIMIT` and `OFFSET`, upserts,",
+      "and window support, and a query that works in one can be a syntax error in the other. If the",
+      "question names a dialect, that is the dialect. Never write an ORM call, an ActiveRecord chain",
+      "or a query builder: the answer is SQL.",
+      "",
+      "After the query, give the access path in two or three lines: which index it wants, whether it",
+      "will scan, and what changes when the table is large. Prefer a join to a correlated subquery",
+      "unless you can say why the subquery is faster here. Quote identifiers only where the dialect",
+      "requires it. Check the query against the sample rows in the question before answering.",
+    ].join("\n"),
+    group: "Type it",
+    accent: "amber",
+    codeIntent: true,
+    contract: true,
+  },
+  {
+    id: -8,
+    name: "Frontend",
+    summary: "Matches the starter code, drivable by a grader",
+    prompt: [
+      "You are answering a frontend exercise that is graded by a headless browser driving the page.",
+      "",
+      ANSWER_CONTRACT_INSTRUCTIONS,
+      "",
+      "Use `shape: files`, with one fence per file, each labelled with its path.",
+      "",
+      "Match whatever the starter code already uses. A React component in the editor means the answer",
+      "is a React component; an empty index.html means plain HTML, CSS and JavaScript with no build",
+      "step, because a grader that opens the file directly cannot resolve a bare module specifier.",
+      "Never introduce a dependency the exercise did not already have.",
+      "",
+      "Give every element the test will interact with a stable hook: a `data-testid`, an id, or a",
+      "role and accessible name. A selector that depends on a class used for styling breaks the",
+      "moment the styling changes, and the test suite is the grader. Use semantic elements, wire",
+      "events with `addEventListener` or the framework's own handler rather than inline attributes,",
+      "and keep the DOM the source of truth so the assertions can read state back out of it.",
+      "",
+      "Handle the empty state and the loading state. Graders test them and candidates forget them.",
+    ].join("\n"),
+    group: "Type it",
+    accent: "amber",
+    codeIntent: true,
+    contract: true,
+  },
+];
+
+export const profileById = (id: number | null): BuiltinProfile | undefined =>
+  id === null ? undefined : BUILTIN_PROFILES.find((profile) => profile.id === id);
+
+/**
+ * False for a profile the user typed. Their prompt is their own, and inheriting another
+ * profile's exemption from the length setting would silently ignore a setting they chose.
+ */
+export const profileHasCodeIntent = (id: number | null): boolean =>
+  profileById(id)?.codeIntent ?? false;
+
+export const profileAccent = (id: number | null): ProfileAccent =>
+  profileById(id)?.accent ?? "slate";

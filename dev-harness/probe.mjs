@@ -16,7 +16,7 @@ const OUT = join(HERE, "out");
 const APP_URL = process.env.HUD_URL ?? "http://localhost:1420/";
 
 /** The HUD window size configured in tauri.conf.json. */
-const HUD_WIDTH = 600;
+const HUD_WIDTH = 1200;
 const HUD_RESTING_HEIGHT = 54;
 const PROMPT_PLACEHOLDER = "Ask anything or type /";
 
@@ -743,8 +743,13 @@ const run = async () => {
     pre.setAttribute("data-streamdown", "code-block-body");
     pre.className = "p-4 text-sm";
     const code = document.createElement("code");
+    // Long enough to overflow the HUD at its current width. It used to be half this,
+    // which stopped overflowing when the HUD widened and quietly turned the assertion
+    // into a check that a fitting line fits.
     code.textContent =
-      "const x = someFunction(argumentOne, argumentTwo, argumentThree, argumentFour, argumentFive);";
+      "const x = someFunction(argumentOne, argumentTwo, argumentThree, argumentFour, " +
+      "argumentFive, argumentSix, argumentSeven, argumentEight, argumentNine, argumentTen, " +
+      "argumentEleven, argumentTwelve, argumentThirteen, argumentFourteen);";
     pre.appendChild(code);
     host.appendChild(pre);
     document.body.appendChild(host);
@@ -769,6 +774,91 @@ const run = async () => {
       `scrollWidth=${codeWrap.scrollWidth} clientWidth=${codeWrap.clientWidth} ` +
       `lineBoxes=${codeWrap.lineBoxes} (want 1)`
   );
+
+  // The bar is 54px tall, so anything opening from it has nowhere to go until the native
+  // window grows. A popover that lets Radix flip it upward instead lands off the top of
+  // the window, clipped, and takes the resize logic with it: a flipped popover measures
+  // as "nothing open yet", no resize fires, and no room below ever appears.
+  // A fresh page: the checks above leave prompt text, open popovers and a grown
+  // viewport behind, and any of those changes where a menu is allowed to open.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.setViewportSize({ width: HUD_WIDTH, height: HUD_RESTING_HEIGHT });
+  await page.waitForSelector('[data-slot="profile-chip"]', { timeout: 15_000 });
+  await page.locator('[data-slot="profile-chip"]').click();
+  await page.waitForSelector("[data-radix-popper-content-wrapper]", { timeout: 10_000 });
+  await page.waitForTimeout(400);
+
+  const chipMenu = await page.evaluate(() => {
+    const card = document.querySelector('[data-slot="card"]');
+    const wrapper = document.querySelector("[data-radix-popper-content-wrapper]");
+    const rect = wrapper?.getBoundingClientRect();
+    const heights = (window.__HARNESS__?.callsFor("set_window_height") ?? []).map(
+      (call) => call.args?.height
+    );
+    return {
+      top: rect ? Math.round(rect.top) : null,
+      bottom: rect ? Math.round(rect.bottom) : null,
+      cardBottom: card ? Math.round(card.getBoundingClientRect().bottom) : null,
+      options: document.querySelectorAll('[role="option"]').length,
+      requested: heights.length ? heights[heights.length - 1] : null,
+    };
+  });
+
+  record(
+    "the profile menu opens below the bar, not off the top of the window",
+    chipMenu.top !== null && chipMenu.top >= 0 && chipMenu.options > 0,
+    `top=${chipMenu.top} bottom=${chipMenu.bottom} options=${chipMenu.options}`
+  );
+  record(
+    "the window grows to fit the profile menu",
+    chipMenu.requested !== null &&
+      chipMenu.bottom !== null &&
+      chipMenu.requested >= chipMenu.bottom,
+    `requested=${chipMenu.requested} menu bottom=${chipMenu.bottom}`
+  );
+
+  const chipMenuShape = await page.evaluate(() => {
+    const menu = document.querySelector('[data-slot="profile-menu"]');
+    const options = [...document.querySelectorAll('[role="option"]')];
+    return {
+      groups: [...document.querySelectorAll('[data-slot="profile-group"]')].map((g) =>
+        g.textContent.trim()
+      ),
+      options: options.length,
+      // Every option must sit under a heading. Counting headings alone would pass a menu
+      // that renders one group and then dumps the rest loose underneath it, and it would
+      // fail honestly whenever a group happens to be empty.
+      grouped: options.filter((option) =>
+        option.closest("div")?.parentElement?.querySelector('[data-slot="profile-group"]')
+      ).length,
+      summaries: options.filter((o) =>
+        o.querySelector('[data-slot="profile-summary"]')
+      ).length,
+      scrolls: menu ? getComputedStyle(menu).overflowY : null,
+      maxHeight: menu ? getComputedStyle(menu).maxHeight : null,
+    };
+  });
+
+  record(
+    "the profile menu groups its options",
+    chipMenuShape.groups.length >= 1 &&
+      chipMenuShape.options > 0 &&
+      chipMenuShape.grouped === chipMenuShape.options,
+    `groups=${JSON.stringify(chipMenuShape.groups)} ` +
+      `${chipMenuShape.grouped}/${chipMenuShape.options} options under a heading`
+  );
+  record(
+    "every profile option explains itself in one line",
+    chipMenuShape.options > 0 && chipMenuShape.summaries === chipMenuShape.options,
+    `${chipMenuShape.summaries}/${chipMenuShape.options} options carry a summary`
+  );
+  record(
+    "the profile menu scrolls rather than running off the screen",
+    chipMenuShape.scrolls === "auto" || chipMenuShape.scrolls === "scroll",
+    `overflow-y=${chipMenuShape.scrolls} max-height=${chipMenuShape.maxHeight}`
+  );
+
+  await page.keyboard.press("Escape");
 
   record(
     "no console errors",

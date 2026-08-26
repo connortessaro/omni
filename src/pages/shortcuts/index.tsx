@@ -1,4 +1,4 @@
-import { CursorSelection, ShortcutManager } from "./components";
+import { CursorSelection, InAppKeys, ShortcutManager } from "./components";
 import { PageLayout } from "@/layouts";
 
 const Shortcuts = () => {
@@ -13,6 +13,9 @@ const Shortcuts = () => {
 
         {/* Keyboard Shortcuts */}
         <ShortcutManager />
+
+        {/* Keys the HUD handles itself, which are fixed and were undocumented */}
+        <InAppKeys />
       </div>
     </PageLayout>
   );

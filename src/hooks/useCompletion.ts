@@ -26,7 +26,8 @@ import {
   budgetOverflowNotice,
   runAgentLoopAsText,
   TOOLS,
-  CODE_PROFILE_ID,
+  ANSWER_CONTRACT_INSTRUCTIONS,
+  profileHasCodeIntent,
   safeLocalStorage,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
@@ -264,12 +265,17 @@ export const useCompletion = () => {
       // These four rewrite the turn into a request for code, so a prose sentence
       // cap on the answer is a request to truncate a diff. /fix, /explain,
       // /summarize and /translate are prose commands and are deliberately absent.
-      // Selecting the Code profile says the same thing about every turn.
-      const codeProfileActive =
-        safeLocalStorage.getItem(STORAGE_KEYS.SELECTED_SYSTEM_PROMPT_ID) ===
-        String(CODE_PROFILE_ID);
+      // Whether the selected profile says the same thing about every turn is the
+      // profile's own business now, declared in src/lib/profiles.ts rather than
+      // branched on here.
+      const selectedProfileId = safeLocalStorage.getItem(
+        STORAGE_KEYS.SELECTED_SYSTEM_PROMPT_ID
+      );
       const codeIntent =
-        codeProfileActive ||
+        profileHasCodeIntent(
+          selectedProfileId === null ? null : Number(selectedProfileId)
+        ) ||
+        matches("/answer") ||
         matches("/code") ||
         matches("/refactor") ||
         matches("/commit") ||
@@ -295,6 +301,12 @@ export const useCompletion = () => {
         input = `Please write clean, production-ready, well-commented code for:\n\n${orContext(argFor("/code"), "(no requirement provided, ask what should be built)")}`;
       } else if (matches("/summarize")) {
         input = `Please summarize the following text into concise bullet points and key takeaways:\n\n${orContext(argFor("/summarize"), "(no text provided, ask what should be summarized)")}`;
+      } else if (matches("/answer")) {
+        // Works from any profile: the contract travels with the turn, so a reader
+        // who has not switched profiles still gets a verdict-first panel. On the
+        // Assessment profile the system prompt already says this, and repeating it
+        // costs a few tokens rather than changing the answer.
+        input = `${ANSWER_CONTRACT_INSTRUCTIONS}\n\nAnswer this assessment question:\n\n${orContext(argFor("/answer"), "(the question is in the attached screenshot)")}`;
       } else if (matches("/regex")) {
         input = `Please explain or construct a regular expression pattern for:\n\n${orContext(argFor("/regex"), "(no pattern provided, ask what the pattern should match)")}`;
       }

@@ -70,15 +70,46 @@ pub fn center_window_completely(window: &WebviewWindow) -> Result<(), Box<dyn st
     Ok(())
 }
 
+/// Fallback only, for the case where the window cannot report its own size. The real
+/// width lives in tauri.conf.json.
+const HUD_WIDTH: f64 = 1200.0;
+
 #[tauri::command]
 pub fn set_window_height(window: tauri::WebviewWindow, height: u32) -> Result<(), String> {
-    use tauri::{LogicalSize, Size};
+    use tauri::{LogicalSize, Position, Size};
 
-    // Simply set the window size with fixed width and new height
-    let new_size = LogicalSize::new(600.0, height as f64);
+    // The HUD is anchored by its top edge: the prompt bar sits at the top of the
+    // window and the answer panel grows downward under it. macOS windows are
+    // positioned from their bottom-left corner, so a resize that only sets the size
+    // is free to move the top edge, and the prompt bar walks up the screen every
+    // time an answer grows. Pinning the position across the resize keeps the bar
+    // where the user put it.
+    let anchor = window.outer_position().ok();
+
+    // The width is read back rather than hardcoded: baking it in here meant every
+    // height change also snapped the window to whatever the constant happened to be,
+    // so changing the HUD width in tauri.conf.json silently did nothing.
+    let width = window
+        .inner_size()
+        .ok()
+        .and_then(|size| {
+            window
+                .scale_factor()
+                .ok()
+                .map(|scale| size.to_logical::<f64>(scale).width)
+        })
+        .unwrap_or(HUD_WIDTH);
+
+    let new_size = LogicalSize::new(width, height as f64);
     window
         .set_size(Size::Logical(new_size))
         .map_err(|e| format!("Failed to resize window: {}", e))?;
+
+    if let Some(position) = anchor {
+        window
+            .set_position(Position::Physical(position))
+            .map_err(|e| format!("Failed to reposition window: {}", e))?;
+    }
 
     Ok(())
 }

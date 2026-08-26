@@ -14,3 +14,6 @@ export * from "./context/budget";
 export * from "./agent/tools";
 export * from "./agent/loop";
 
+export * from "./assessment";
+export * from "./test-runner";
+export * from "./profiles";
