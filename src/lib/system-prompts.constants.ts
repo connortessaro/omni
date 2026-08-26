@@ -1,30 +1,24 @@
-import { CODING_SYSTEM_PROMPT } from "@/config/constants";
-import { ASSESSMENT_SYSTEM_PROMPT } from "@/lib/assessment";
+import { BUILTIN_PROFILES } from "@/lib/profiles";
 import { SystemPrompt } from "@/types";
 
-// Built-ins carry negative ids so they can never collide with a SQLite
-// autoincrement rowid, which is what lets them sit in the same list, behind the
-// same selection handler, as a profile the user typed.
-export const CODE_PROFILE_ID = -1;
-export const ASSESSMENT_PROFILE_ID = -2;
-
+// Built-ins carry negative ids so they can never collide with a SQLite autoincrement
+// rowid, which is what lets them sit in the same list, behind the same selection handler,
+// as a profile the user typed. The ids themselves live in the registry.
 const BUILTIN_TIMESTAMP = "1970-01-01T00:00:00.000Z";
 
-export const BUILTIN_SYSTEM_PROMPTS: SystemPrompt[] = [
-  {
-    id: CODE_PROFILE_ID,
-    name: "Code",
-    prompt: CODING_SYSTEM_PROMPT,
+/**
+ * The registry projected into the shape the database path already speaks, so
+ * `useSystemPrompts` can concatenate built-ins and user rows without knowing the
+ * difference between them.
+ */
+export const BUILTIN_SYSTEM_PROMPTS: SystemPrompt[] = BUILTIN_PROFILES.map(
+  (profile) => ({
+    id: profile.id,
+    name: profile.name,
+    prompt: profile.prompt,
     created_at: BUILTIN_TIMESTAMP,
     updated_at: BUILTIN_TIMESTAMP,
-  },
-  {
-    id: ASSESSMENT_PROFILE_ID,
-    name: "Assessment",
-    prompt: ASSESSMENT_SYSTEM_PROMPT,
-    created_at: BUILTIN_TIMESTAMP,
-    updated_at: BUILTIN_TIMESTAMP,
-  },
-];
+  })
+);
 
 export const isBuiltinSystemPrompt = (id: number): boolean => id < 0;

@@ -16,3 +16,4 @@ export * from "./agent/loop";
 
 export * from "./assessment";
 export * from "./test-runner";
+export * from "./profiles";

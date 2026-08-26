@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components";
 import { useSystemPrompts } from "@/hooks";
-import { ASSESSMENT_PROFILE_ID, CODE_PROFILE_ID, isBuiltinSystemPrompt } from "@/lib";
+import { isBuiltinSystemPrompt, profileAccent, ProfileAccent } from "@/lib";
 
 /**
  * Which prompt profile the next turn will run under, and a way to change it.
@@ -20,13 +20,16 @@ const CHIP_LABEL_LIMIT = 11;
 const shortLabel = (name: string): string =>
   name.length <= CHIP_LABEL_LIMIT ? name : `${name.slice(0, CHIP_LABEL_LIMIT - 1)}…`;
 
-/** Built-ins carry the accent of the answer shape they produce; anything typed is neutral. */
-const accentFor = (id: number | null): string => {
-  if (id === ASSESSMENT_PROFILE_ID)
-    return "border-violet-500/40 text-violet-700 dark:border-violet-400/40 dark:text-violet-300";
-  if (id === CODE_PROFILE_ID)
-    return "border-cyan-600/40 text-cyan-700 dark:border-cyan-400/40 dark:text-cyan-300";
-  return "border-input/40 text-muted-foreground";
+/** The registry names the accent; the mapping to Tailwind classes belongs here. */
+const ACCENT_CLASSES: Record<ProfileAccent, string> = {
+  cyan: "border-cyan-600/40 text-cyan-700 dark:border-cyan-400/40 dark:text-cyan-300",
+  violet:
+    "border-violet-500/40 text-violet-700 dark:border-violet-400/40 dark:text-violet-300",
+  rose: "border-rose-500/40 text-rose-700 dark:border-rose-400/40 dark:text-rose-300",
+  indigo:
+    "border-indigo-500/40 text-indigo-700 dark:border-indigo-400/40 dark:text-indigo-300",
+  amber: "border-amber-500/40 text-amber-700 dark:border-amber-400/40 dark:text-amber-300",
+  slate: "border-input/40 text-muted-foreground",
 };
 
 export const ProfileChip = () => {
@@ -44,9 +47,7 @@ export const ProfileChip = () => {
           data-slot="profile-chip"
           data-profile-id={selectedPromptId ?? "default"}
           title={`Prompt profile: ${selected?.name ?? "Default"}`}
-          className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${accentFor(
-            selectedPromptId
-          )}`}
+          className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${ACCENT_CLASSES[profileAccent(selectedPromptId)]}`}
         >
           {label}
           <ChevronDown className="size-2.5 opacity-60" aria-hidden="true" />

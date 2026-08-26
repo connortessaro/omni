@@ -26,9 +26,8 @@ import {
   budgetOverflowNotice,
   runAgentLoopAsText,
   TOOLS,
-  CODE_PROFILE_ID,
-  ASSESSMENT_PROFILE_ID,
   ANSWER_CONTRACT_INSTRUCTIONS,
+  profileHasCodeIntent,
   safeLocalStorage,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
@@ -266,19 +265,16 @@ export const useCompletion = () => {
       // These four rewrite the turn into a request for code, so a prose sentence
       // cap on the answer is a request to truncate a diff. /fix, /explain,
       // /summarize and /translate are prose commands and are deliberately absent.
-      // Selecting the Code profile says the same thing about every turn.
+      // Whether the selected profile says the same thing about every turn is the
+      // profile's own business now, declared in src/lib/profiles.ts rather than
+      // branched on here.
       const selectedProfileId = safeLocalStorage.getItem(
         STORAGE_KEYS.SELECTED_SYSTEM_PROMPT_ID
       );
-      const codeProfileActive = selectedProfileId === String(CODE_PROFILE_ID);
-      // An assessment answer carries the solution in full, so a prose sentence cap
-      // would truncate the part being transcribed just as it would on the Code
-      // profile. /answer says the same thing about a single turn.
-      const assessmentActive =
-        selectedProfileId === String(ASSESSMENT_PROFILE_ID);
       const codeIntent =
-        codeProfileActive ||
-        assessmentActive ||
+        profileHasCodeIntent(
+          selectedProfileId === null ? null : Number(selectedProfileId)
+        ) ||
         matches("/answer") ||
         matches("/code") ||
         matches("/refactor") ||

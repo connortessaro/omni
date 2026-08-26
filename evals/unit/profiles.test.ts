@@ -1,0 +1,139 @@
+// The registry is the single place a profile's behaviour is declared. These cover the
+// invariants that break silently: an id that moves repoints every saved selection at a
+// different prompt, and a profile whose metadata disagrees with its own prompt text gets
+// a length cap applied to code or a verdict panel with nothing to render.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { loadSrcModule } from "../harness/loadSrcModule.ts";
+
+interface ProfilesModule {
+  BUILTIN_PROFILES: Array<{
+    id: number;
+    name: string;
+    summary: string;
+    prompt: string;
+    group: string;
+    accent: string;
+    codeIntent: boolean;
+    contract: boolean;
+  }>;
+  PROFILE_GROUP_ORDER: string[];
+  CODE_PROFILE_ID: number;
+  ASSESSMENT_PROFILE_ID: number;
+  profileById(id: number | null): { name: string } | undefined;
+  profileHasCodeIntent(id: number | null): boolean;
+  profileAccent(id: number | null): string;
+}
+
+const load = () => loadSrcModule<ProfilesModule>("lib/profiles.ts");
+
+// Pinned on purpose. The selected profile is persisted as an id, so moving one silently
+// hands a user a different prompt than the one they chose.
+const PINNED_IDS: Record<string, number> = {
+  Code: -1,
+  Assessment: -2,
+};
+
+test("built-in ids never move", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  for (const [name, id] of Object.entries(PINNED_IDS)) {
+    const profile = BUILTIN_PROFILES.find((p) => p.name === name);
+    assert.ok(profile, `a built-in named ${name} must ship`);
+    assert.equal(profile.id, id, `${name} must keep id ${id}`);
+  }
+});
+
+test("every built-in id is negative and unique", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const ids = BUILTIN_PROFILES.map((p) => p.id);
+  assert.ok(
+    ids.every((id) => id < 0),
+    "built-in ids must be negative"
+  );
+  assert.equal(new Set(ids).size, ids.length, "built-in ids must be unique");
+});
+
+test("every profile carries a name and a one-line summary", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  for (const profile of BUILTIN_PROFILES) {
+    assert.ok(profile.name.length > 0, `${profile.id} needs a name`);
+    assert.ok(profile.summary.length > 0, `${profile.name} needs a summary`);
+    assert.ok(
+      profile.summary.length <= 60,
+      `${profile.name} summary must fit the picker: ${profile.summary}`
+    );
+    assert.ok(profile.prompt.trim().length > 0, `${profile.name} needs a prompt`);
+  }
+});
+
+test("a profile's contract flag agrees with its own prompt", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const { ANSWER_CONTRACT_INSTRUCTIONS } = await loadSrcModule<{
+    ANSWER_CONTRACT_INSTRUCTIONS: string;
+  }>("lib/assessment.ts");
+
+  for (const profile of BUILTIN_PROFILES) {
+    const carries = profile.prompt.includes(ANSWER_CONTRACT_INSTRUCTIONS);
+    assert.equal(
+      carries,
+      profile.contract,
+      `${profile.name}: contract=${profile.contract} but prompt ${
+        carries ? "carries" : "omits"
+      } the contract`
+    );
+  }
+});
+
+test("a profile that answers with code never asks for concision", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  // The generic prompt's own instruction to be concise is what made a multi-file diff
+  // come back as a summary. A profile that skips the length cap must not reintroduce it.
+  for (const profile of BUILTIN_PROFILES.filter((p) => p.codeIntent)) {
+    assert.ok(
+      !/\bconcise\b/i.test(profile.prompt),
+      `${profile.name} must not ask for concision`
+    );
+  }
+});
+
+test("every group in the registry is in the picker's ordering", async () => {
+  const { BUILTIN_PROFILES, PROFILE_GROUP_ORDER } = await load();
+  for (const profile of BUILTIN_PROFILES) {
+    assert.ok(
+      PROFILE_GROUP_ORDER.includes(profile.group),
+      `${profile.name} is in group ${profile.group}, which the picker does not order`
+    );
+  }
+});
+
+test("lookups answer for a known id and stay quiet for an unknown one", async () => {
+  const { profileById, profileHasCodeIntent, profileAccent, CODE_PROFILE_ID } =
+    await load();
+
+  assert.equal(profileById(CODE_PROFILE_ID)?.name, "Code");
+  assert.equal(profileHasCodeIntent(CODE_PROFILE_ID), true);
+  assert.equal(profileAccent(CODE_PROFILE_ID), "cyan");
+
+  // A profile the user typed is a positive rowid and has no registry entry. It must read
+  // as neutral rather than throwing or inheriting another profile's behaviour.
+  assert.equal(profileById(7), undefined);
+  assert.equal(profileHasCodeIntent(7), false);
+  assert.equal(profileAccent(7), "slate");
+  assert.equal(profileHasCodeIntent(null), false);
+  assert.equal(profileAccent(null), "slate");
+});
+
+test("the derived built-in list still matches the registry", async () => {
+  const { BUILTIN_PROFILES } = await load();
+  const { BUILTIN_SYSTEM_PROMPTS } = await loadSrcModule<{
+    BUILTIN_SYSTEM_PROMPTS: Array<{ id: number; name: string; prompt: string }>;
+  }>("lib/system-prompts.constants.ts");
+
+  assert.equal(BUILTIN_SYSTEM_PROMPTS.length, BUILTIN_PROFILES.length);
+  for (const profile of BUILTIN_PROFILES) {
+    const shipped = BUILTIN_SYSTEM_PROMPTS.find((p) => p.id === profile.id);
+    assert.ok(shipped, `${profile.name} must reach the selectable list`);
+    assert.equal(shipped.name, profile.name);
+    assert.equal(shipped.prompt, profile.prompt);
+  }
+});
