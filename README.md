@@ -6,13 +6,16 @@
 
 ### Local-first AI assistant for the desktop. Tauri v2, Rust, React.
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app)
 [![Rust](https://img.shields.io/badge/Rust-2021-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=black)](https://react.dev)
 [![Telemetry](https://img.shields.io/badge/telemetry-zero-success?style=flat-square)](#)
 
 </div>
+
+> Omni is a fork of [Pluely](https://github.com/iamsrikanthnani/pluely) by Srikanth Nani,
+> licensed under GPL-3.0. See [NOTICE.md](NOTICE.md).
 
 ---
 
@@ -112,4 +115,7 @@ break every CI release build.
 
 ## 📄 License
 
-Distributed under the [Apache-2.0 License](LICENSE). Copyright © 2026 Connor Tessaro.
+Omni is a fork of [Pluely](https://github.com/iamsrikanthnani/pluely) by Srikanth Nani,
+and is distributed under the [GNU General Public License v3.0](LICENSE), the same license
+as upstream. See [NOTICE.md](NOTICE.md) for attribution, the list of modifications made in
+this fork, and the license history.

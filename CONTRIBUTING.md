@@ -34,4 +34,4 @@ Thank you for your interest in contributing to **Omni**!
 
 ## 📄 License
 
-By contributing to Omni, you agree that your contributions will be licensed under the [Apache-2.0 License](LICENSE).
+By contributing to Omni, you agree that your contributions will be licensed under the [GNU General Public License v3.0](LICENSE).
