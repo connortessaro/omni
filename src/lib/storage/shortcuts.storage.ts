@@ -1,11 +1,16 @@
-import { STORAGE_KEYS, DEFAULT_SHORTCUT_ACTIONS } from "@/config";
+import {
+  STORAGE_KEYS,
+  DEFAULT_SHORTCUT_ACTIONS,
+  MODIFIER_CHORDS,
+  isModifierChord,
+} from "@/config";
 import {
   ShortcutsConfig,
   ShortcutBinding,
   ShortcutConflict,
   ShortcutAction,
 } from "@/types";
-import { getPlatform } from "@/lib";
+import { getPlatform } from "../platform";
 
 /**
  * Get platform-specific default key for a shortcut action
@@ -44,6 +49,53 @@ export const getDefaultShortcutsConfig = (): ShortcutsConfig => {
 };
 
 /**
+ * macOS defaults that shipped in an earlier version. A saved binding still
+ * sitting on one of these is a key the user never chose, so it can move to the
+ * current default; a hand-set key must not.
+ */
+const LEGACY_MACOS_DEFAULTS: Record<string, string[]> = {
+  toggle_dashboard: ["cmd+shift+d"],
+  toggle_window: ["cmd+backslash"],
+  focus_input: ["cmd+shift+i"],
+  system_audio: ["cmd+shift+m"],
+  audio_recording: ["cmd+shift+a"],
+  screenshot: ["cmd+shift+s"],
+  screenshot_region: ["cmd+shift+r"],
+};
+
+const DEFAULTS_MIGRATION_KEY = "omni.shortcuts.defaults.v2";
+
+/**
+ * Move uncustomized bindings onto the current defaults, once per install.
+ * `enabled` is left alone, so a shortcut that was turned off stays off.
+ *
+ * Mutates `config` and reports whether anything changed.
+ */
+export const migrateLegacyDefaultBindings = (
+  config: ShortcutsConfig
+): boolean => {
+  if (getPlatform() !== "macos") return false;
+  if (localStorage.getItem(DEFAULTS_MIGRATION_KEY)) return false;
+  localStorage.setItem(DEFAULTS_MIGRATION_KEY, "1");
+
+  let changed = false;
+
+  DEFAULT_SHORTCUT_ACTIONS.forEach((action) => {
+    const binding = config.bindings?.[action.id];
+    const legacy = LEGACY_MACOS_DEFAULTS[action.id];
+    if (!binding || !legacy?.includes(binding.key)) return;
+
+    const current = getPlatformDefaultKey(action);
+    if (binding.key === current) return;
+
+    binding.key = current;
+    changed = true;
+  });
+
+  return changed;
+};
+
+/**
  * Get shortcuts configuration from localStorage
  */
 export const getShortcutsConfig = (): ShortcutsConfig => {
@@ -51,6 +103,9 @@ export const getShortcutsConfig = (): ShortcutsConfig => {
     const stored = localStorage.getItem(STORAGE_KEYS.SHORTCUTS);
     if (stored) {
       const parsed = JSON.parse(stored);
+      if (migrateLegacyDefaultBindings(parsed)) {
+        localStorage.setItem(STORAGE_KEYS.SHORTCUTS, JSON.stringify(parsed));
+      }
       // Merge with defaults to ensure all default actions are present
       const defaults = getDefaultShortcutsConfig();
       return {
@@ -58,6 +113,9 @@ export const getShortcutsConfig = (): ShortcutsConfig => {
         customActions: parsed.customActions || [],
       };
     }
+    // A fresh install already has the current defaults, so make sure the
+    // migration never runs against them later.
+    localStorage.setItem(DEFAULTS_MIGRATION_KEY, "1");
     return getDefaultShortcutsConfig();
   } catch (error) {
     console.error("Failed to get shortcuts config:", error);
@@ -134,6 +192,7 @@ export const checkShortcutConflicts = (
  * Validate shortcut key format
  */
 export const validateShortcutKey = (key: string): boolean => {
+  if (isModifierChord(key)) return getPlatform() === "macos";
   const parts = key
     .toLowerCase()
     .split("+")
@@ -233,6 +292,8 @@ export const validateShortcutKey = (key: string): boolean => {
  * Format shortcut key for display
  */
 export const formatShortcutKeyForDisplay = (key: string): string => {
+  const chord = MODIFIER_CHORDS[key];
+  if (chord) return chord;
   return key
     .split("+")
     .map((part) => {

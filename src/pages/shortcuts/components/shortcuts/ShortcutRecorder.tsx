@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components";
 import { Check, X } from "lucide-react";
 import {
@@ -7,6 +7,9 @@ import {
   formatShortcutKeyForDisplay,
 } from "@/lib";
 import { invoke } from "@tauri-apps/api/core";
+import { MODIFIER_CHORD_CODES } from "@/config";
+
+const MODIFIER_FLAGS = ["metaKey", "ctrlKey", "altKey", "shiftKey"] as const;
 
 interface ShortcutRecorderProps {
   onSave: (key: string) => void;
@@ -23,6 +26,7 @@ export const ShortcutRecorder = ({
 }: ShortcutRecorderProps) => {
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [error, setError] = useState<string>("");
+  const heldModifiers = useRef(new Set<string>());
   const isRecording = true; // Always recording
   const isMoveWindow = actionId === "move_window";
   const minKeys = isMoveWindow ? 1 : 2;
@@ -34,11 +38,37 @@ export const ShortcutRecorder = ({
       e.preventDefault();
       e.stopPropagation();
 
+      // Left+right modifier chords have no main key, so they cannot go through
+      // the normal "modifiers plus a key" path below.
+      if (isMacOS() && !isMoveWindow) {
+        const chord = MODIFIER_CHORD_CODES.find(({ codes }) =>
+          codes.includes(e.code)
+        );
+        if (chord) {
+          heldModifiers.current.add(e.code);
+          const bothDown = chord.codes.every((code) =>
+            heldModifiers.current.has(code)
+          );
+          const noOtherModifier = MODIFIER_FLAGS.every(
+            (flag) => flag === chord.flag || !e[flag]
+          );
+          if (bothDown && noOtherModifier) {
+            setRecordedKeys(chord.key.split("+"));
+            setError("");
+            return;
+          }
+        }
+      }
+
       const keys: string[] = [];
 
-      // Add modifiers
-      if (e.metaKey || e.ctrlKey) {
-        keys.push(isMacOS() ? "cmd" : "ctrl");
+      // Add modifiers. Cmd and Ctrl are separate keys on macOS, and several
+      // defaults use them together; elsewhere the Windows key stands in for Ctrl.
+      if (isMacOS()) {
+        if (e.metaKey) keys.push("cmd");
+        if (e.ctrlKey) keys.push("ctrl");
+      } else if (e.metaKey || e.ctrlKey) {
+        keys.push("ctrl");
       }
       if (e.altKey) keys.push("alt");
       if (e.shiftKey) keys.push("shift");
@@ -110,6 +140,7 @@ export const ShortcutRecorder = ({
   const handleKeyUp = useCallback(
     (e: KeyboardEvent) => {
       if (!isRecording) return;
+      heldModifiers.current.delete(e.code);
       e.preventDefault();
       e.stopPropagation();
     },
@@ -121,10 +152,14 @@ export const ShortcutRecorder = ({
       // Focus the window to ensure key events are captured
       window.focus();
 
+      const clearHeldModifiers = () => heldModifiers.current.clear();
+      window.addEventListener("blur", clearHeldModifiers);
       window.addEventListener("keydown", handleKeyDown, true);
       window.addEventListener("keyup", handleKeyUp, true);
 
       return () => {
+        window.removeEventListener("blur", clearHeldModifiers);
+        clearHeldModifiers();
         window.removeEventListener("keydown", handleKeyDown, true);
         window.removeEventListener("keyup", handleKeyUp, true);
       };
@@ -224,7 +259,9 @@ export const ShortcutRecorder = ({
         <p className="text-xs text-muted-foreground">
           {isMoveWindow
             ? "Press modifier keys (e.g., Cmd+Shift). Arrow keys work automatically."
-            : "Press a key combination now (e.g., Cmd+Shift+K)"}
+            : isMacOS()
+            ? "Press a key combination now (e.g. Cmd+Ctrl+K), or both Cmd, both Shift or both Option keys together"
+            : "Press a key combination now (e.g., Ctrl+Shift+K)"}
         </p>
       )}
 
