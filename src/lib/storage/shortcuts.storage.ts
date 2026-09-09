@@ -10,7 +10,7 @@ import {
   ShortcutConflict,
   ShortcutAction,
 } from "@/types";
-import { getPlatform } from "../platform";
+import { getPlatform } from "@/lib";
 
 /**
  * Get platform-specific default key for a shortcut action
@@ -53,17 +53,15 @@ export const getDefaultShortcutsConfig = (): ShortcutsConfig => {
  * sitting on one of these is a key the user never chose, so it can move to the
  * current default; a hand-set key must not.
  */
-const LEGACY_MACOS_DEFAULTS: Record<string, string[]> = {
-  toggle_dashboard: ["cmd+shift+d"],
-  toggle_window: ["cmd+backslash"],
-  focus_input: ["cmd+shift+i"],
-  system_audio: ["cmd+shift+m"],
-  audio_recording: ["cmd+shift+a"],
-  screenshot: ["cmd+shift+s"],
-  screenshot_region: ["cmd+shift+r"],
+const LEGACY_MACOS_DEFAULTS: Record<string, string> = {
+  toggle_dashboard: "cmd+shift+d",
+  toggle_window: "cmd+backslash",
+  focus_input: "cmd+shift+i",
+  system_audio: "cmd+shift+m",
+  audio_recording: "cmd+shift+a",
+  screenshot: "cmd+shift+s",
+  screenshot_region: "cmd+shift+r",
 };
-
-const DEFAULTS_MIGRATION_KEY = "omni.shortcuts.defaults.v2";
 
 /**
  * Move uncustomized bindings onto the current defaults, once per install.
@@ -75,15 +73,13 @@ export const migrateLegacyDefaultBindings = (
   config: ShortcutsConfig
 ): boolean => {
   if (getPlatform() !== "macos") return false;
-  if (localStorage.getItem(DEFAULTS_MIGRATION_KEY)) return false;
-  localStorage.setItem(DEFAULTS_MIGRATION_KEY, "1");
+  if (localStorage.getItem(STORAGE_KEYS.SHORTCUT_DEFAULTS_MIGRATED)) return false;
 
   let changed = false;
 
   DEFAULT_SHORTCUT_ACTIONS.forEach((action) => {
     const binding = config.bindings?.[action.id];
-    const legacy = LEGACY_MACOS_DEFAULTS[action.id];
-    if (!binding || !legacy?.includes(binding.key)) return;
+    if (!binding || binding.key !== LEGACY_MACOS_DEFAULTS[action.id]) return;
 
     const current = getPlatformDefaultKey(action);
     if (binding.key === current) return;
@@ -92,6 +88,8 @@ export const migrateLegacyDefaultBindings = (
     changed = true;
   });
 
+  // Last, so a throw above leaves the migration to be retried next launch.
+  localStorage.setItem(STORAGE_KEYS.SHORTCUT_DEFAULTS_MIGRATED, "1");
   return changed;
 };
 
@@ -115,7 +113,7 @@ export const getShortcutsConfig = (): ShortcutsConfig => {
     }
     // A fresh install already has the current defaults, so make sure the
     // migration never runs against them later.
-    localStorage.setItem(DEFAULTS_MIGRATION_KEY, "1");
+    localStorage.setItem(STORAGE_KEYS.SHORTCUT_DEFAULTS_MIGRATED, "1");
     return getDefaultShortcutsConfig();
   } catch (error) {
     console.error("Failed to get shortcuts config:", error);

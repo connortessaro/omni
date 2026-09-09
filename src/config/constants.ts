@@ -17,6 +17,7 @@ export const STORAGE_KEYS = {
   VAD_CONFIG: "vad_config",
   CUSTOMIZABLE: "customizable",
   SHORTCUTS: "shortcuts",
+  SHORTCUT_DEFAULTS_MIGRATED: "shortcut_defaults_migrated",
   AUTOSTART_INITIALIZED: "autostart_initialized",
 
   SELECTED_AUDIO_DEVICES: "selected_audio_devices",

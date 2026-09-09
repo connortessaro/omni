@@ -360,7 +360,7 @@ pub fn update_shortcuts<R: Runtime>(
     eprintln!("Updating shortcuts with {} bindings", config.bindings.len());
 
     let mut shortcuts_to_register = Vec::new();
-    let mut special_shortcuts = HashMap::new();
+    let mut chord_shortcuts = HashMap::new();
 
     for (action_id, binding) in &config.bindings {
         if binding.enabled && !binding.key.is_empty() {
@@ -368,7 +368,7 @@ pub fn update_shortcuts<R: Runtime>(
                 if !cfg!(target_os = "macos") {
                     return Err(format!("'{}' is only supported on macOS", binding.key));
                 }
-                special_shortcuts.insert(action_id.clone(), binding.key.clone());
+                chord_shortcuts.insert(action_id.clone(), binding.key.clone());
                 continue;
             }
             if action_id == "move_window" {
@@ -423,7 +423,7 @@ pub fn update_shortcuts<R: Runtime>(
     unregister_all_shortcuts(&app)?;
 
     // Now register all new shortcuts
-    let mut successfully_registered = special_shortcuts;
+    let mut successfully_registered = chord_shortcuts;
 
     let mut registration_failures: Vec<(String, String, String)> = Vec::new();
 

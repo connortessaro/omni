@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loadSrcModule } from "../harness/loadSrcModule.ts";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { loadSrcModule, REPO_ROOT } from "../harness/loadSrcModule.ts";
 
 // Why this exists.
 //
@@ -23,6 +25,7 @@ interface ShortcutsModule {
     defaultKey: { macos: string; windows: string; linux: string };
   }>;
   MODIFIER_CHORDS: Record<string, string>;
+  isModifierChord: (key: string) => boolean;
   MODIFIER_CHORD_CODES: Array<{
     key: string;
     codes: [string, string];
@@ -30,8 +33,12 @@ interface ShortcutsModule {
   }>;
 }
 
-const { DEFAULT_SHORTCUT_ACTIONS, MODIFIER_CHORDS, MODIFIER_CHORD_CODES } =
-  await loadSrcModule<ShortcutsModule>("config/shortcuts.ts");
+const {
+  DEFAULT_SHORTCUT_ACTIONS,
+  MODIFIER_CHORDS,
+  MODIFIER_CHORD_CODES,
+  isModifierChord,
+} = await loadSrcModule<ShortcutsModule>("config/shortcuts.ts");
 
 const PLATFORMS = ["macos", "windows", "linux"] as const;
 
@@ -130,6 +137,22 @@ test("every chord used as a default is a chord the app knows", () => {
   }
 });
 
+test("the Rust chord table lists exactly the chords the UI can bind", () => {
+  // The poll loop is the only thing that fires a chord and it matches on the key
+  // string, so a chord added on one side of the boundary and not the other is
+  // silently unreachable: no error, the shortcut just never happens.
+  const rust = readFileSync(
+    path.join(REPO_ROOT, "src-tauri", "src", "shortcuts.rs"),
+    "utf8"
+  );
+  const declaration = "MODIFIER_CHORDS: &[(&str, u16, u16)] = &[";
+  const start = rust.indexOf(declaration);
+  assert.notEqual(start, -1, "the Rust chord table has been renamed or moved");
+  const table = rust.slice(start, rust.indexOf("];", start));
+  const declared = [...table.matchAll(/"([a-z+]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(declared, Object.keys(MODIFIER_CHORDS));
+});
+
 test("the recorder can capture every chord the app can bind", () => {
   assert.deepEqual(
     MODIFIER_CHORD_CODES.map((chord) => chord.key),
@@ -142,6 +165,9 @@ test("the recorder can capture every chord the app can bind", () => {
 });
 
 interface StorageModule {
+  migrateLegacyDefaultBindings: (config: {
+    bindings: Record<string, { action: string; key: string; enabled: boolean }>;
+  }) => boolean;
   getShortcutsConfig: () => {
     bindings: Record<string, { action: string; key: string; enabled: boolean }>;
   };
@@ -157,7 +183,6 @@ interface StorageModule {
 async function withBrowser(
   platform: string,
   body: (env: {
-    saved: Map<string, string>;
     save: (bindings: Record<string, { action: string; key: string; enabled: boolean }>) => void;
     storage: StorageModule;
   }) => Promise<void> | void
@@ -187,7 +212,7 @@ async function withBrowser(
     const save = (
       bindings: Record<string, { action: string; key: string; enabled: boolean }>
     ) => saved.set("shortcuts", JSON.stringify({ bindings }));
-    await body({ saved, save, storage });
+    await body({ save, storage });
   } finally {
     for (const [name, descriptor] of descriptors) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);
@@ -195,12 +220,6 @@ async function withBrowser(
     }
   }
 }
-
-const binding = (key: string, enabled = true) => ({
-  action: "unused",
-  key,
-  enabled,
-});
 
 test("a binding still on an old default moves to the new one", async () => {
   await withBrowser("MacIntel", ({ save, storage }) => {
@@ -298,8 +317,26 @@ test("chords validate and display on macOS only", async () => {
 test("the retuned macOS combos still pass validation", async () => {
   await withBrowser("MacIntel", ({ storage }) => {
     for (const [id, key] of Object.entries(MACOS_DEFAULTS)) {
-      if (key.startsWith("left") || id === "move_window") continue;
+      if (isModifierChord(key) || id === "move_window") continue;
       assert.equal(storage.validateShortcutKey(key), true, `${id}: ${key}`);
     }
+  });
+});
+
+test("the migration reports whether it changed anything", async () => {
+  await withBrowser("MacIntel", ({ storage }) => {
+    const legacy = () => ({
+      bindings: {
+        screenshot: { action: "screenshot", key: "cmd+shift+s", enabled: true },
+      },
+    });
+
+    const first = legacy();
+    assert.equal(storage.migrateLegacyDefaultBindings(first), true);
+    assert.equal(first.bindings.screenshot.key, "leftcmd+rightcmd");
+
+    const second = legacy();
+    assert.equal(storage.migrateLegacyDefaultBindings(second), false);
+    assert.equal(second.bindings.screenshot.key, "cmd+shift+s");
   });
 });

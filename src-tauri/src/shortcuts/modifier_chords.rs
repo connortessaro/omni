@@ -11,9 +11,9 @@ extern "C" {
     fn CGEventSourceKeyState(state_id: i32, key: u16) -> bool;
 }
 
-/// Every modifier the loop watches: the chord pairs, plus both Controls, which no
-/// chord uses but which have to be up for one to fire.
-const WATCHED: [u16; 8] = [0x37, 0x36, 0x38, 0x3C, 0x3A, 0x3D, 0x3B, 0x3E];
+/// No chord uses Control, but it has to be up for one to fire.
+/// kVK_Control 0x3B, kVK_RightControl 0x3E.
+const CONTROL_KEYS: [u16; 2] = [0x3B, 0x3E];
 
 const POLL_ACTIVE: Duration = Duration::from_millis(24);
 const POLL_IDLE: Duration = Duration::from_millis(250);
@@ -30,18 +30,21 @@ struct Chord {
 }
 
 impl Chord {
-    /// `both`/`any` describe this chord's own pair. `clean` means no other
-    /// modifier is down.
-    fn update(&mut self, both: bool, any: bool, clean: bool) -> bool {
-        if !any {
+    /// `pressed` is every modifier key currently down; `left` and `right` are
+    /// this chord's own pair.
+    fn update(&mut self, pressed: &[u16], left: u16, right: u16) -> bool {
+        let down = |code: u16| pressed.contains(&code);
+        let foreign = pressed.iter().any(|&code| code != left && code != right);
+
+        if !down(left) && !down(right) {
             self.latched = false;
         }
-        if !clean {
-            // A foreign modifier means these keys belong to some other app's
-            // shortcut. Wait for a full release before arming again.
+        if foreign {
+            // These keys belong to some other app's shortcut. Wait for a full
+            // release before arming again.
             self.latched = true;
         }
-        if !both || !clean {
+        if !(down(left) && down(right)) || foreign {
             // Require both keys released before another capture, so a chord
             // cannot repeat when one key bounces while the other is held.
             self.held = 0;
@@ -65,6 +68,16 @@ fn key_down(key: u16) -> bool {
     // 0 = kCGEventSourceStateCombinedSessionState. This query neither consumes
     // nor synthesizes keyboard events.
     unsafe { CGEventSourceKeyState(0, key) }
+}
+
+/// Which of the chord keys and Control are down right now.
+fn modifiers_down() -> Vec<u16> {
+    MODIFIER_CHORDS
+        .iter()
+        .flat_map(|(_, left, right)| [*left, *right])
+        .chain(CONTROL_KEYS)
+        .filter(|&code| key_down(code))
+        .collect()
 }
 
 /// Every enabled binding whose key is a chord, as (action_id, chord key).
@@ -102,21 +115,10 @@ pub(super) fn start<R: Runtime>(app: AppHandle<R>) {
                 continue;
             }
 
-            let mut down = [0u16; WATCHED.len()];
-            let mut count = 0;
-            for code in WATCHED {
-                if key_down(code) {
-                    down[count] = code;
-                    count += 1;
-                }
-            }
-            let down = &down[..count];
+            let pressed = modifiers_down();
 
             for (chord, (key, left, right)) in chords.iter_mut().zip(MODIFIER_CHORDS) {
-                let both = down.contains(left) && down.contains(right);
-                let any = down.contains(left) || down.contains(right);
-                let clean = down.iter().all(|code| code == left || code == right);
-                if !chord.update(both, any, clean) {
+                if !chord.update(&pressed, *left, *right) {
                     continue;
                 }
                 for (action, _) in bound.iter().filter(|(_, bound_key)| bound_key == key) {
@@ -133,32 +135,35 @@ pub(super) fn start<R: Runtime>(app: AppHandle<R>) {
 mod tests {
     use super::*;
 
-    /// Mirrors what the poll loop derives from the watched keycodes.
-    fn poll(chord: &mut Chord, left: bool, right: bool, foreign: bool) -> bool {
-        chord.update(left && right, left || right, !foreign)
+    const LEFT: u16 = 0x37;
+    const RIGHT: u16 = 0x36;
+    const FOREIGN: u16 = CONTROL_KEYS[0];
+
+    fn poll(chord: &mut Chord, pressed: &[u16]) -> bool {
+        chord.update(pressed, LEFT, RIGHT)
     }
 
     /// Both keys down and nothing else, long enough to clear the threshold.
     fn hold(chord: &mut Chord) -> bool {
         let mut fired = false;
         for _ in 0..HOLD_POLLS {
-            fired |= poll(chord, true, true, false);
+            fired |= poll(chord, &[LEFT, RIGHT]);
         }
         fired
     }
 
     #[test]
     fn either_order_fires_once_until_both_keys_are_released() {
-        for (left, right) in [(true, false), (false, true)] {
+        for one in [LEFT, RIGHT] {
             let mut chord = Chord::default();
-            assert!(!poll(&mut chord, false, false, false));
-            assert!(!poll(&mut chord, left, right, false));
+            assert!(!poll(&mut chord, &[]));
+            assert!(!poll(&mut chord, &[one]));
             assert!(hold(&mut chord));
             assert!(!hold(&mut chord));
             // One key bouncing while the other stays held must not re-fire.
-            assert!(!poll(&mut chord, left, right, false));
+            assert!(!poll(&mut chord, &[one]));
             assert!(!hold(&mut chord));
-            assert!(!poll(&mut chord, false, false, false));
+            assert!(!poll(&mut chord, &[]));
             assert!(hold(&mut chord));
         }
     }
@@ -167,21 +172,21 @@ mod tests {
     fn a_tap_shorter_than_the_hold_threshold_does_not_fire() {
         let mut chord = Chord::default();
         for _ in 0..HOLD_POLLS - 1 {
-            assert!(!poll(&mut chord, true, true, false));
+            assert!(!poll(&mut chord, &[LEFT, RIGHT]));
         }
-        assert!(!poll(&mut chord, false, false, false));
-        assert!(!poll(&mut chord, true, true, false));
+        assert!(!poll(&mut chord, &[]));
+        assert!(!poll(&mut chord, &[LEFT, RIGHT]));
     }
 
     #[test]
     fn a_foreign_modifier_suppresses_the_chord_until_release() {
         let mut chord = Chord::default();
         for _ in 0..HOLD_POLLS * 2 {
-            assert!(!poll(&mut chord, true, true, true));
+            assert!(!poll(&mut chord, &[LEFT, RIGHT, FOREIGN]));
         }
         // Releasing only the foreign modifier is not enough.
         assert!(!hold(&mut chord));
-        assert!(!poll(&mut chord, false, false, false));
+        assert!(!poll(&mut chord, &[]));
         assert!(hold(&mut chord));
     }
 
@@ -190,23 +195,8 @@ mod tests {
         let mut chord = Chord::default();
         chord.disarm();
         assert!(!hold(&mut chord));
-        assert!(!poll(&mut chord, true, false, false));
-        assert!(!poll(&mut chord, false, false, false));
+        assert!(!poll(&mut chord, &[LEFT]));
+        assert!(!poll(&mut chord, &[]));
         assert!(hold(&mut chord));
-    }
-
-    #[test]
-    fn every_watched_keycode_is_distinct_and_covers_the_chord_table() {
-        let mut seen = WATCHED.to_vec();
-        seen.sort_unstable();
-        seen.dedup();
-        assert_eq!(seen.len(), WATCHED.len(), "duplicate keycode in WATCHED");
-        for (key, left, right) in MODIFIER_CHORDS {
-            assert!(WATCHED.contains(left), "{key} left keycode is not watched");
-            assert!(
-                WATCHED.contains(right),
-                "{key} right keycode is not watched"
-            );
-        }
     }
 }
