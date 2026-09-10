@@ -12,6 +12,27 @@ use tokio::time::{sleep, Duration};
 use tauri_nspanel::ManagerExt;
 
 use crate::window::show_dashboard_window;
+
+#[cfg(target_os = "macos")]
+mod modifier_chords;
+
+/// Chords made of one modifier's left and right key. Nothing on macOS binds these,
+/// so they cannot be taken away from the app underneath the HUD; the global
+/// shortcut plugin also cannot register them, so `modifier_chords` polls for them.
+///
+/// (binding key, left keycode, right keycode). Virtual keycodes come from Carbon's
+/// Events.h: kVK_Command 0x37, kVK_RightCommand 0x36, kVK_Shift 0x38,
+/// kVK_RightShift 0x3C, kVK_Option 0x3A, kVK_RightOption 0x3D.
+pub(crate) const MODIFIER_CHORDS: &[(&str, u16, u16)] = &[
+    ("leftcmd+rightcmd", 0x37, 0x36),
+    ("leftshift+rightshift", 0x38, 0x3C),
+    ("leftalt+rightalt", 0x3A, 0x3D),
+];
+
+pub(crate) fn is_modifier_chord(key: &str) -> bool {
+    MODIFIER_CHORDS.iter().any(|(chord, ..)| *chord == key)
+}
+
 // State for window visibility
 pub struct WindowVisibility {
     #[allow(dead_code)]
@@ -70,6 +91,8 @@ pub fn setup_global_shortcuts<R: Runtime>(
             poisoned.into_inner()
         }
     };
+    #[cfg(target_os = "macos")]
+    modifier_chords::start(app.clone());
     eprintln!("Global shortcuts state initialized, waiting for frontend config");
 
     Ok(())
@@ -337,9 +360,17 @@ pub fn update_shortcuts<R: Runtime>(
     eprintln!("Updating shortcuts with {} bindings", config.bindings.len());
 
     let mut shortcuts_to_register = Vec::new();
+    let mut chord_shortcuts = HashMap::new();
 
     for (action_id, binding) in &config.bindings {
         if binding.enabled && !binding.key.is_empty() {
+            if is_modifier_chord(&binding.key) {
+                if !cfg!(target_os = "macos") {
+                    return Err(format!("'{}' is only supported on macOS", binding.key));
+                }
+                chord_shortcuts.insert(action_id.clone(), binding.key.clone());
+                continue;
+            }
             if action_id == "move_window" {
                 let modifiers = binding.key.trim();
                 if modifiers.is_empty() {
@@ -392,7 +423,7 @@ pub fn update_shortcuts<R: Runtime>(
     unregister_all_shortcuts(&app)?;
 
     // Now register all new shortcuts
-    let mut successfully_registered = HashMap::new();
+    let mut successfully_registered = chord_shortcuts;
 
     let mut registration_failures: Vec<(String, String, String)> = Vec::new();
 
@@ -489,6 +520,9 @@ pub fn check_shortcuts_registered<R: Runtime>(app: AppHandle<R>) -> Result<bool,
 /// Tauri command to validate shortcut key
 #[tauri::command]
 pub fn validate_shortcut_key(key: String) -> Result<bool, String> {
+    if is_modifier_chord(&key) {
+        return Ok(cfg!(target_os = "macos"));
+    }
     match key.parse::<Shortcut>() {
         Ok(_) => Ok(true),
         Err(e) => {
@@ -651,14 +685,20 @@ mod tests {
     #[test]
     fn shipped_default_shortcuts_all_parse() {
         for key in [
-            "cmd+backslash",
+            // macOS
+            "cmd+shift+backslash",
+            "cmd+ctrl+i",
+            "cmd+ctrl+l",
+            "cmd+ctrl+r",
+            // Windows and Linux
             "ctrl+backslash",
-            "cmd+shift+d",
-            "cmd+shift+i",
-            "cmd+shift+s",
-            "cmd+shift+r",
-            "cmd+shift+m",
-            "cmd+shift+a",
+            "ctrl+shift+d",
+            "ctrl+shift+i",
+            "ctrl+shift+m",
+            "ctrl+shift+a",
+            "ctrl+shift+s",
+            "ctrl+shift+r",
+            // move_window expands its modifier into these
             "cmd+up",
             "cmd+down",
             "cmd+left",
@@ -685,6 +725,46 @@ mod tests {
                     "expanded move_window binding {key} does not parse"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn modifier_chords_are_only_valid_on_macos() {
+        for (key, ..) in MODIFIER_CHORDS {
+            assert_eq!(
+                validate_shortcut_key(key.to_string()),
+                Ok(cfg!(target_os = "macos")),
+                "chord {key} validated wrong for this platform"
+            );
+        }
+    }
+
+    /// A duplicate key or keycode would make one chord permanently unreachable,
+    /// with nothing at runtime to say so.
+    #[test]
+    fn the_chord_table_has_no_duplicates() {
+        let mut keys: Vec<&str> = MODIFIER_CHORDS.iter().map(|(key, ..)| *key).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), MODIFIER_CHORDS.len(), "duplicate chord key");
+
+        let mut codes: Vec<u16> = MODIFIER_CHORDS
+            .iter()
+            .flat_map(|(_, left, right)| [*left, *right])
+            .collect();
+        codes.sort_unstable();
+        codes.dedup();
+        assert_eq!(codes.len(), MODIFIER_CHORDS.len() * 2, "duplicate keycode");
+    }
+
+    /// Chords never reach the plugin, so they must not be in the parse list.
+    #[test]
+    fn chords_do_not_parse_as_plugin_shortcuts() {
+        for (key, ..) in MODIFIER_CHORDS {
+            assert!(
+                key.parse::<Shortcut>().is_err(),
+                "{key} now parses, so it would be registered twice"
+            );
         }
     }
 

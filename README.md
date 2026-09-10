@@ -21,12 +21,12 @@
 
 ## ⚡ Highlights
 
-* **HUD Overlay**: Summon a floating command bar anywhere via `⌘ + \` (customizable).
+* **HUD Overlay**: Summon a floating command bar anywhere by pressing both `⌥` keys together (customizable).
 * **Zero Telemetry**: Keys and chats stay on disk in SQLite (`omni.db`). No tracking, no license server, no usage reporting.
 * **Slash Commands**: `/solve` (multi-step, with tools), `/answer` (verdict-first assessment answers), `/fix`, `/commit`, `/refactor`, `/explain`, `/code`, `/summarize`, `/translate`, `/regex`, `/clear`.
 * **Keyboard History**: Press `↑` / `↓` in the input box to cycle through recent prompts.
 * **Model Switching**: Pick any model your configured key has access to, without re-entering it. Local Ollama models are detected at `http://127.0.0.1:11434`.
-* **Vision**: Screenshot a desktop area (`⌘ + Shift + S`) and ask about it.
+* **Vision**: Screenshot a desktop area (press both `⌘` keys together) and ask about it.
 * **Prompt Profiles**: Eight built-ins, switchable from the chip in the HUD, split by what you do with the answer. Type it: `Code`, `Assessment`, `Debug`, `SQL`, `Frontend`. Say it: `Live Interview`, `Behavioral`, `System Design`.
 * **Assessment Answers**: The `Assessment` prompt profile and `/answer` return the verdict first: the chosen option letters, the runnable solution, or the files touched, with the reasoning folded behind it and a jump rail for multi-file answers.
 * **Run Before You Trust**: A Python, JavaScript or TypeScript answer gets a **Run tests** button. It writes the answer's files to a scratch directory, runs the test file with a 10s timeout, and reports `12 passed` or the assertion that broke. The code runs locally as you, with no network jail: read it before you click.
@@ -35,14 +35,28 @@
 
 ## ⌨️ Default Shortcuts
 
+The HUD sits on top of whatever app you are using, and a global shortcut takes the
+key away from that app. So the macOS defaults keep off the crowded `⌘ + Shift`
+prefix: the actions you reach for most are **modifier chords** — hold one
+modifier's left and right key together — and the rest sit on `⌘ + Ctrl`. Nothing
+in macOS binds a left+right pair, so a chord cannot collide with the app
+underneath. Every binding is rebindable in Settings → Shortcuts.
+
 | Action | macOS | Windows / Linux |
 | :--- | :--- | :--- |
-| **Toggle HUD Overlay** | `⌘ + \` | `Ctrl + \` |
-| **Toggle Full Space** | `⌘ + Shift + D` | `Ctrl + Shift + D` |
-| **Refocus Input** | `⌘ + Shift + I` | `Ctrl + Shift + I` |
+| **Toggle HUD Overlay** | Left `⌥` + Right `⌥` | `Ctrl + \` |
+| **Screenshot** | Left `⌘` + Right `⌘` | `Ctrl + Shift + S` |
+| **Voice Input** | Left `⇧` + Right `⇧` | `Ctrl + Shift + A` |
+| **Capture Region** | `⌘ + Ctrl + R` | `Ctrl + Shift + R` |
+| **System Audio Capture** | `⌘ + Ctrl + L` | `Ctrl + Shift + M` |
+| **Refocus Input** | `⌘ + Ctrl + I` | `Ctrl + Shift + I` |
+| **Toggle Full Space** | `⌘ + Shift + \` | `Ctrl + Shift + D` |
 | **Move Overlay** | `⌘ + Arrow Keys` | `Ctrl + Arrow Keys` |
-| **Area Screenshot** | `⌘ + Shift + S` | `Ctrl + Shift + S` |
-| **System Audio Capture** | `⌘ + Shift + M` | `Ctrl + Shift + M` |
+
+Chords are detected by polling Quartz for key state, which needs no Accessibility
+or Input Monitoring permission. A chord has to be held briefly before it fires, and
+is ignored while any other modifier is down, so it cannot be tripped by an ordinary
+`⌘ + Shift` shortcut in the app underneath.
 
 ---
 
@@ -50,7 +64,7 @@
 
 ```mermaid
 graph TD
-    A[Global Hotkey: ⌘ + \\] -->|Debounced IPC| B(Tauri Rust Backend)
+    A[Global Hotkey: Left ⌥ + Right ⌥] -->|Debounced IPC| B(Tauri Rust Backend)
     B -->|Hardware NSPanel| C[React Overlay HUD]
     C -->|Slash Commands & Prompts| D{Model Router}
     D -->|Local API| E[Ollama: 127.0.0.1:11434]
