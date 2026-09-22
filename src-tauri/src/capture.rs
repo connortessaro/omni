@@ -126,6 +126,7 @@ pub async fn start_screen_capture(app: tauri::AppHandle) -> Result<(), String> {
                 .position(logical_x, logical_y)
                 .transparent(true)
                 .always_on_top(true)
+                .content_protected(true)
                 .decorations(false)
                 .skip_taskbar(true)
                 .resizable(false)

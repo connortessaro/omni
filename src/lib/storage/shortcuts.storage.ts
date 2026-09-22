@@ -38,7 +38,7 @@ export const getDefaultShortcutsConfig = (): ShortcutsConfig => {
     bindings[action.id] = {
       action: action.id,
       key: getPlatformDefaultKey(action),
-      enabled: true,
+      enabled: action.defaultEnabled ?? true,
     };
   });
 

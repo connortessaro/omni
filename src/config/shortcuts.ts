@@ -59,6 +59,7 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       windows: "ctrl+shift+d",
       linux: "ctrl+shift+d",
     },
+    defaultEnabled: false,
   },
   {
     id: "toggle_window",
@@ -69,6 +70,7 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       windows: "ctrl+backslash",
       linux: "ctrl+backslash",
     },
+    defaultEnabled: true,
   },
   {
     id: "focus_input",
@@ -79,6 +81,7 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       windows: "ctrl+shift+i",
       linux: "ctrl+shift+i",
     },
+    defaultEnabled: false,
   },
   {
     id: "move_window",
@@ -89,6 +92,7 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       windows: "ctrl",
       linux: "ctrl",
     },
+    defaultEnabled: false,
   },
   {
     id: "system_audio",
@@ -99,6 +103,7 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       windows: "ctrl+shift+m",
       linux: "ctrl+shift+m",
     },
+    defaultEnabled: false,
   },
   {
     id: "audio_recording",
@@ -109,6 +114,7 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       windows: "ctrl+shift+a",
       linux: "ctrl+shift+a",
     },
+    defaultEnabled: false,
   },
   {
     id: "screenshot",
@@ -119,6 +125,7 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       windows: "ctrl+shift+s",
       linux: "ctrl+shift+s",
     },
+    defaultEnabled: true,
   },
   {
     id: "screenshot_region",
@@ -129,5 +136,6 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
       windows: "ctrl+shift+r",
       linux: "ctrl+shift+r",
     },
+    defaultEnabled: false,
   },
 ];

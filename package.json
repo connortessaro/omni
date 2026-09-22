@@ -31,7 +31,8 @@
     "check:secrets": "node scripts/check-secret-storage.mjs",
     "verify:models": "node scripts/verify-model-listing.mjs",
     "verify:agent": "node scripts/verify-agent-loop.mjs",
-    "secret:probe": "node dev-harness/secret-field-probe.mjs"
+    "secret:probe": "node dev-harness/secret-field-probe.mjs",
+    "stress:test": "node scripts/stress-test.mjs"
   },
   "dependencies": {
     "@bany/curl-to-json": "^1.2.8",

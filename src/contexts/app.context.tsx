@@ -369,8 +369,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     });
 
     const unlistenShow = listen("handle-app-icon-on-show", async () => {
-      // Always show app icon when window is shown, regardless of user setting
-      await handleAppIconVisibility(true);
+      const currentState = getCustomizableState();
+      if (currentState.appIcon.isVisible) {
+        await handleAppIconVisibility(true);
+      }
     });
 
     return () => {

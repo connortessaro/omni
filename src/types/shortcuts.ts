@@ -7,6 +7,7 @@ export interface ShortcutAction {
     windows: string;
     linux: string;
   };
+  defaultEnabled?: boolean;
 }
 
 export interface ShortcutBinding {
