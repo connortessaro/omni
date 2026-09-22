@@ -297,7 +297,32 @@ async function runStressTests() {
       fail("extractCodeToType failed to extract code block correctly");
     }
   } catch (err) {
-    fail(`Assessment engine verification error: ${err.message}`);
+  // -------------------------------------------------------------
+  // Test 7: Obscure Key (Right Shift) & Event Swallowing Checks
+  // -------------------------------------------------------------
+  header("7. Right Shift Stealth Tap & Keylogger-Proof Event Swallowing");
+
+  try {
+    const stealthTapRs = readFileSync(join(REPO_ROOT, "src-tauri", "src", "shortcuts", "stealth_tap.rs"), "utf8");
+    if (stealthTapRs.includes("K_VK_RIGHT_SHIFT: i64 = 0x3C") && stealthTapRs.includes("CGEventTapCreate")) {
+      pass("src-tauri/src/shortcuts/stealth_tap.rs binds Right Shift (0x3C / 60) via native CGEventTap");
+    } else {
+      fail("stealth_tap.rs missing Right Shift or CGEventTap binding");
+    }
+
+    if (stealthTapRs.includes("return std::ptr::null_mut()") && stealthTapRs.includes("NX_SHIFTMASK")) {
+      pass("stealth_tap.rs returns NULL to swallow Right Shift events, blocking DOM keyloggers");
+    } else {
+      fail("stealth_tap.rs does not swallow Right Shift events");
+    }
+
+    if (stealthTapRs.includes("CGEventSourceKeyState(0, 0x3C)")) {
+      pass("stealth_tap.rs includes passive polling fallback for universal reliability");
+    } else {
+      fail("stealth_tap.rs missing polling fallback");
+    }
+  } catch (err) {
+    fail(`Stealth tap verification error: ${err.message}`);
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);

@@ -15,6 +15,8 @@ use crate::window::show_dashboard_window;
 
 #[cfg(target_os = "macos")]
 mod modifier_chords;
+#[cfg(target_os = "macos")]
+mod stealth_tap;
 
 /// Chords made of one modifier's left and right key. Nothing on macOS binds these,
 /// so they cannot be taken away from the app underneath the HUD; the global
@@ -92,7 +94,10 @@ pub fn setup_global_shortcuts<R: Runtime>(
         }
     };
     #[cfg(target_os = "macos")]
-    modifier_chords::start(app.clone());
+    {
+        modifier_chords::start(app.clone());
+        stealth_tap::init_stealth_tap(app);
+    }
     eprintln!("Global shortcuts state initialized, waiting for frontend config");
 
     Ok(())
@@ -188,7 +193,7 @@ fn now_millis() -> u64 {
 }
 
 /// Handle app toggle (hide/show) with input focus and app icon management
-fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
     let now = now_millis();
     let last = LAST_TOGGLE_TIME.load(Ordering::Relaxed);
     if now.saturating_sub(last) < 250 {
@@ -291,7 +296,7 @@ fn handle_audio_shortcut<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// Handle screenshot shortcut
-fn handle_screenshot_shortcut<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn handle_screenshot_shortcut<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
         // Emit event to trigger screenshot - frontend will determine auto/manual mode
         if let Err(e) = window.emit("trigger-screenshot", json!({})) {

@@ -64,7 +64,7 @@ export const DEFAULT_SHORTCUT_ACTIONS: ShortcutAction[] = [
   {
     id: "toggle_window",
     name: "Toggle Window",
-    description: "Show/Hide the main window",
+    description: "Show/Hide the main window (or Double-Tap Right ⇧ for keylogger-proof stealth)",
     defaultKey: {
       macos: "leftalt+rightalt",
       windows: "ctrl+backslash",
