@@ -9,6 +9,7 @@ export * from "./CustomCursor";
 export * from "./Sidebar";
 export * from "./Empty";
 export * from "./Markdown/copy-button";
+export * from "./Markdown/auto-type-button";
 export * from "./Icons";
 export * from "./OmniLogo";
 

@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tokio::task::JoinHandle;
 mod speaker;
+mod typing;
 use capture::CaptureState;
 use speaker::VadConfig;
 
@@ -87,6 +88,9 @@ pub fn run() {
             speaker::get_capture_status,
             speaker::get_audio_sample_rate,
             speaker::get_output_devices,
+            typing::simulate_human_typing,
+            typing::cancel_human_typing,
+            typing::is_human_typing,
         ])
         .setup(|app| {
             // Setup main window positioning
