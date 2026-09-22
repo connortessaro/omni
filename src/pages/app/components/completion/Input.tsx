@@ -10,6 +10,7 @@ import {
   Markdown,
   Switch,
   CopyButton,
+  AutoTypeButton,
   AnswerCard,
 } from "@/components";
 import { UseCompletionReturn } from "@/types";
@@ -407,6 +408,7 @@ export const Input = ({
                 />
               </div>
               <CopyButton content={response} />
+              <AutoTypeButton content={response} />
               <Button
                 size="icon"
                 variant="ghost"

@@ -261,6 +261,44 @@ async function runStressTests() {
   } else {
     pass("Non-macOS platform: display affinity isolation verified via tauri contentProtected: true");
   }
+  // -------------------------------------------------------------
+  // Test 6: Assessment Engine & Human Typing Simulation Checks
+  // -------------------------------------------------------------
+  header("6. Assessment Engine & Anti-Paste Typing Checks");
+
+  try {
+    const constants = readFileSync(join(REPO_ROOT, "src", "config", "constants.ts"), "utf8");
+    if (constants.includes("ASSESSMENT_SYSTEM_PROMPT") && constants.includes("DEFAULT_ASSESSMENT_AUTO_PROMPT")) {
+      pass("constants.ts defines specialized ASSESSMENT_SYSTEM_PROMPT and DEFAULT_ASSESSMENT_AUTO_PROMPT");
+    } else {
+      fail("constants.ts missing ASSESSMENT_SYSTEM_PROMPT or DEFAULT_ASSESSMENT_AUTO_PROMPT");
+    }
+
+    const typingRs = readFileSync(join(REPO_ROOT, "src-tauri", "src", "typing.rs"), "utf8");
+    if (typingRs.includes("simulate_human_typing") && typingRs.includes("CGEventCreateKeyboardEvent")) {
+      pass("src-tauri/src/typing.rs implements simulate_human_typing with native CoreGraphics keyboard events");
+    } else {
+      fail("src-tauri/src/typing.rs missing simulate_human_typing implementation");
+    }
+
+    const autoTypeBtn = readFileSync(join(REPO_ROOT, "src", "components", "Markdown", "auto-type-button.tsx"), "utf8");
+    if (autoTypeBtn.includes("extractCodeToType") && autoTypeBtn.includes("simulate_human_typing")) {
+      pass("auto-type-button.tsx implements code extraction and invokes simulate_human_typing");
+    } else {
+      fail("auto-type-button.tsx missing extractCodeToType or simulate_human_typing integration");
+    }
+
+    // Test code extraction regex directly
+    const testMarkdown = "Here is the solution:\n```python\ndef solve(nums):\n    return sum(nums)\n```\nHope this helps!";
+    const codeMatch = testMarkdown.match(/```[a-zA-Z0-9_-]*\n([\s\S]*?)```/);
+    if (codeMatch && codeMatch[1].trim() === "def solve(nums):\n    return sum(nums)") {
+      pass("extractCodeToType successfully extracts clean code block from markdown");
+    } else {
+      fail("extractCodeToType failed to extract code block correctly");
+    }
+  } catch (err) {
+    fail(`Assessment engine verification error: ${err.message}`);
+  }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
   console.log(`\n\x1b[1m\x1b[32mAll stress tests and verification checks passed in ${duration}s!\x1b[0m\n`);

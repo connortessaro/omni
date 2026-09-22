@@ -1,6 +1,8 @@
 import {
   AI_PROVIDERS,
   DEFAULT_SYSTEM_PROMPT,
+  ASSESSMENT_SYSTEM_PROMPT,
+  DEFAULT_ASSESSMENT_AUTO_PROMPT,
   SPEECH_TO_TEXT_PROVIDERS,
   STORAGE_KEYS,
 } from "@/config";
@@ -78,7 +80,7 @@ const AppContext = createContext<IContextType | undefined>(undefined);
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [systemPrompt, setSystemPrompt] = useState<string>(
     safeLocalStorage.getItem(STORAGE_KEYS.SYSTEM_PROMPT) ||
-      DEFAULT_SYSTEM_PROMPT
+      ASSESSMENT_SYSTEM_PROMPT
   );
 
   const [selectedAudioDevices, setSelectedAudioDevices] = useState<{
@@ -128,12 +130,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const [screenshotConfiguration, setScreenshotConfiguration] =
     useState<ScreenshotConfig>({
-      // Region capture, not the whole screen. A full-screen grab at native
-      // resolution is transcribed to roughly 60% and then stops with no error;
-      // a dragged region measures 0-1.7% character error. `mode` is only read on
-      // the `enabled: true` branch, so it is inert here.
-      mode: "manual",
-      autoPrompt: "Analyze this screenshot and provide insights",
+      mode: "auto",
+      autoPrompt: DEFAULT_ASSESSMENT_AUTO_PROMPT,
       enabled: false,
     });
 
@@ -184,10 +182,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const parsed = JSON.parse(savedScreenshotConfig);
         if (typeof parsed === "object" && parsed !== null) {
           setScreenshotConfiguration({
-            mode: parsed.mode || "manual",
+            mode: parsed.mode || "auto",
             autoPrompt:
-              parsed.autoPrompt ||
-              "Analyze this screenshot and provide insights",
+              parsed.autoPrompt || DEFAULT_ASSESSMENT_AUTO_PROMPT,
             enabled: parsed.enabled !== undefined ? parsed.enabled : false,
           });
         }
