@@ -234,5 +234,12 @@ fn init(app_handle: &AppHandle) {
             | NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces,
     );
 
+    // Explicitly enforce NSWindowSharingNone (0) so WindowServer excludes the panel
+    // from all screen recording, Zoom/Teams screen shares, OBS capture, and browser getDisplayMedia.
+    unsafe {
+        use tauri_nspanel::objc::{msg_send, sel, sel_impl};
+        let _: () = msg_send![&*panel, setSharingType: 0usize];
+    }
+
     panel.set_delegate(delegate);
 }

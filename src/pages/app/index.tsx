@@ -1,7 +1,5 @@
 import {
   Card,
-  Updater,
-  DragButton,
   CustomCursor,
   Button,
   OmniLogo,
@@ -52,17 +50,11 @@ const App = () => {
           isHidden ? "hidden pointer-events-none" : ""
         }`}
       >
-        <Card ref={hudRef} className="w-full flex flex-row items-center gap-2 p-2 rounded-2xl bg-card/85 backdrop-blur-2xl border border-white/10 shadow-2xl transition-all duration-300 hover:border-primary/40">
+        <Card ref={hudRef} className="w-full flex flex-row items-center gap-1.5 p-1.5 rounded-xl bg-card/90 backdrop-blur-xl border border-white/10 shadow-lg transition-all duration-200" data-tauri-drag-region>
           <SystemAudio {...systemAudio} />
           {systemAudio?.capturing ? (
             <div className="flex flex-row items-center gap-2 justify-between w-full">
               <div className="flex flex-1 items-center gap-2">
-                {/* No stream is available to pass here: system-audio capture
-                    is entirely native (src/hooks/useSystemAudio.ts talks to
-                    Tauri commands, never navigator.mediaDevices), so there is
-                    no browser-side MediaStream to visualize. AudioVisualizer
-                    renders its own honest "no signal" state for that case;
-                    it must not be handed a synthesized one. */}
                 <AudioVisualizer isRecording={systemAudio?.capturing} />
               </div>
               <div className="flex !w-fit items-center gap-2">
@@ -81,23 +73,20 @@ const App = () => {
             className={`${
               systemAudio?.capturing
                 ? "hidden w-full fade-out transition-all duration-300"
-                : "w-full flex flex-row gap-2 items-center"
+                : "w-full flex flex-row gap-1.5 items-center"
             }`}
           >
             <Completion isHidden={isHidden} />
             <QuickModelSwitcher />
             <Button
               size={"icon"}
-              className="cursor-pointer bg-muted/60 hover:bg-primary/20 hover:border-primary/40 border border-input/40 transition-all duration-200 shrink-0"
-              title="Open Omni Space"
+              className="cursor-pointer bg-muted/40 hover:bg-primary/20 border border-input/30 transition-all duration-150 shrink-0 size-8 rounded-lg"
+              title="Open Settings & Space"
               onClick={openDashboard}
             >
-              <OmniLogo size={18} glow={false} />
+              <OmniLogo size={16} glow={false} />
             </Button>
           </div>
-
-          <Updater />
-          <DragButton />
         </Card>
         {customizable.cursor.type === "invisible" && platform !== "linux" ? (
           <CustomCursor />

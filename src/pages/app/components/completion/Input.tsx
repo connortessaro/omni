@@ -15,16 +15,7 @@ import {
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
 import { ProfileChip } from "./ProfileChip";
-import {
-  playHapticClick,
-  playActionChime,
-  createPasteBlock,
-  formatTokenCount,
-  PASTE_AS_BLOCK_THRESHOLD,
-} from "@/lib";
-
-/** Big enough for a real diff, small enough that reading it never stalls the HUD. */
-const CLIPBOARD_PEEK_LIMIT = 100_000;
+import { playHapticClick, formatTokenCount } from "@/lib";
 
 /** Must fit one line in the narrow HUD, or a textarea wraps and clips it. */
 const PROMPT_PLACEHOLDER = "Ask anything or type /";
@@ -43,10 +34,6 @@ const PROMPT_MAX_HEIGHT = 64;
 
 /** What Cmd+Enter opens: room to read a long prompt back before sending it. */
 const COMPOSER_MAX_HEIGHT = 320;
-
-/** Below this the readout is noise; a one-line prompt does not need measuring. */
-const READOUT_MIN_CHARS = 80;
-
 
 const SLASH_COMMANDS = [
   { command: "/fix", description: "Fix grammar & tone", example: "/fix <text>" },
@@ -89,22 +76,13 @@ export const Input = ({
   keepEngaged,
   setKeepEngaged,
   contextBlocks,
-  addContextBlock,
   removeContextBlock,
   historyNotice,
-  showCaptureHint,
-  setShowCaptureHint,
 }: UseCompletionReturn & { isHidden: boolean }) => {
-  const [clipboardSnippet, setClipboardSnippet] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
 
-  /** Wrapped lines, not newlines: what the reader cannot see is what they wrapped into. */
-  const [visualLines, setVisualLines] = useState(1);
-
-  /** Clipboard text already pushed at the user, so it is never pushed twice. */
-  const offeredClipboardRef = useRef<string | null>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // The whitespace-delimited head of the prompt is what the menu filters on, so
@@ -150,26 +128,11 @@ export const Input = ({
     [setInput, inputRef]
   );
 
-  const dismissClipboardPeek = useCallback(() => {
-    if (clipboardSnippet) offeredClipboardRef.current = clipboardSnippet;
-    setClipboardSnippet(null);
-  }, [clipboardSnippet]);
-
   // WKWebView does not honor `field-sizing: content`, so grow the box here.
-  //
-  // The line count is taken here rather than in render: this is already the one place
-  // that reads layout, and counting newlines instead would report "1 line" for a prompt
-  // that wrapped into six.
   const growToFitContent = useCallback(
     (element: HTMLTextAreaElement | null) => {
       if (!element) return;
       element.style.height = `${PROMPT_MIN_HEIGHT}px`;
-
-      const lineHeight =
-        parseFloat(getComputedStyle(element).lineHeight) || PROMPT_MIN_HEIGHT;
-      setVisualLines(
-        element.value ? Math.max(1, Math.round(element.scrollHeight / lineHeight)) : 1
-      );
 
       if (!element.value) return;
       if (element.scrollHeight <= element.clientHeight) return;
@@ -188,54 +151,6 @@ export const Input = ({
   useEffect(() => {
     if (!input) setComposerOpen(false);
   }, [input]);
-
-  // The peek exists for "I summoned Omni with nothing typed", so it is armed by
-  // the HUD appearing and by nothing else. It used to depend on `input` and bail
-  // only when `input` was truthy, which meant deleting a prompt re-read the
-  // clipboard and offered the just-deleted text straight back, with the native
-  // window growing under it because the bar carries `data-hud-overlay`.
-  // `isHidden` is the only dependency on purpose: this now runs on mount and on
-  // each hide/show, never on a prompt edit.
-  useEffect(() => {
-    if (isHidden) {
-      setClipboardSnippet(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const checkClipboard = async () => {
-      try {
-        const text = (await navigator.clipboard.readText()).trim();
-        if (cancelled) return;
-        if (
-          text.length >= 4 &&
-          text.length <= CLIPBOARD_PEEK_LIMIT &&
-          text !== offeredClipboardRef.current
-        ) {
-          setClipboardSnippet(text);
-        }
-      } catch {
-        // Reading the clipboard without a user gesture is refused on purpose by
-        // the webview. That is the normal case, not a fault worth reporting: the
-        // peek is a shortcut, and everything else in the prompt box still works.
-      }
-    };
-
-    void checkClipboard();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isHidden]);
-
-  // Typing over the peek declines it. Marking the value offered is what keeps it
-  // from coming back the moment the prompt is emptied again.
-  useEffect(() => {
-    if (!input || !clipboardSnippet) return;
-    offeredClipboardRef.current = clipboardSnippet;
-    setClipboardSnippet(null);
-  }, [input, clipboardSnippet]);
 
   return (
     <div className="relative flex-1">
@@ -327,12 +242,6 @@ export const Input = ({
                     }
                   }
 
-                  if (e.key === "Escape" && clipboardSnippet) {
-                    e.preventDefault();
-                    dismissClipboardPeek();
-                    return;
-                  }
-
                   // Chip-input convention: with nothing left to delete, Backspace
                   // takes the last attachment. Without it a context chip has no
                   // keyboard route out, so clearing the prompt leaves a paste icon
@@ -384,100 +293,6 @@ export const Input = ({
                     : "pr-2"
                 }`}
               />
-
-            {/* Said once, after the first whole-screen capture. A native-resolution
-                grab is transcribed to about 60% and then stops without saying so,
-                and the region path measures 0-1.7% character error. Carries
-                data-hud-overlay so the native window does not grow under it. */}
-            {showCaptureHint && (
-              <div
-                data-hud-overlay
-                className="absolute left-0 right-0 top-full mt-2 flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl bg-card/95 backdrop-blur-2xl border border-white/10 shadow-xl text-xs animate-in fade-in slide-in-from-top-1 duration-150 z-40"
-              >
-                {/* Wraps rather than truncates: the usable prompt column is
-                    about 212px, and `truncate` cut the sentence at "lose
-                    detail…", dropping the only actionable half. */}
-                <span
-                  data-slot="capture-hint"
-                  className="text-[11px] leading-snug text-muted-foreground"
-                >
-                  Whole-screen captures lose detail. Drag a region to read
-                  accurately.
-                </span>
-                <button
-                  type="button"
-                  data-slot="capture-hint-dismiss"
-                  onClick={() => setShowCaptureHint(false)}
-                  title="Dismiss capture tip"
-                  className="cursor-pointer shrink-0 rounded text-muted-foreground/70 transition hover:text-destructive"
-                >
-                  <XIcon className="size-2.5" />
-                </button>
-              </div>
-            )}
-
-            {/* Smart Clipboard Inline AI Actions
-                Suppressed while the capture tip is up: both bars are positioned
-                at top-full, so rendering them together stacks one behind the
-                other. The tip answers an action the user just took, so it wins,
-                and the peek re-arms on the next clipboard change. */}
-            {clipboardSnippet &&
-              !showCaptureHint &&
-              !input &&
-              !isPopoverOpen &&
-              !isLoading && (
-              <div
-                data-hud-overlay
-                className="absolute left-0 right-0 top-full mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-2 py-1.5 rounded-xl bg-card/95 backdrop-blur-2xl border border-white/10 shadow-xl text-xs animate-in fade-in slide-in-from-top-1 duration-150 z-40">
-                <div className="flex items-center gap-1.5 text-muted-foreground truncate max-w-[160px]">
-                  <Clipboard className="size-3 text-cyan-400 shrink-0" />
-                  <span className="truncate text-[11px] font-mono opacity-80">"{clipboardSnippet.slice(0, 24)}..."</span>
-                </div>
-                {/* These four labelled pills have never fitted the ~197px prompt
-                    column of a 600px HUD on one line; they only stayed inside the
-                    card by wrapping each label onto two lines and still spilled
-                    past the right edge. Wrapping the row is what leaves room for
-                    the dismiss control without anything being drawn outside. */}
-                <div className="flex w-full flex-wrap items-center justify-end gap-1">
-                  {[
-                    { label: "⚡ Fix", prefix: "/fix " },
-                    { label: "🚀 Commit", prefix: "/commit " },
-                    { label: "💻 Refactor", prefix: "/refactor " },
-                    { label: "🔍 Explain", prefix: "/explain " },
-                  ].map((action) => (
-                    <button
-                      key={action.label}
-                      type="button"
-                      onClick={() => {
-                        playActionChime();
-                        if (clipboardSnippet.length > PASTE_AS_BLOCK_THRESHOLD) {
-                          addContextBlock(createPasteBlock(clipboardSnippet));
-                          setInput(action.prefix.trim());
-                        } else {
-                          setInput(`${action.prefix}${clipboardSnippet}`);
-                        }
-                        dismissClipboardPeek();
-                        setTimeout(() => {
-                          inputRef.current?.focus();
-                        }, 50);
-                      }}
-                      className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-muted/60 hover:bg-primary/20 hover:text-primary hover:border-primary/40 border border-input/40 transition cursor-pointer select-none"
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    data-slot="clipboard-peek-dismiss"
-                    onClick={dismissClipboardPeek}
-                    title="Dismiss clipboard suggestion"
-                    className="cursor-pointer rounded text-muted-foreground/70 transition hover:text-destructive"
-                  >
-                    <XIcon className="size-2.5" />
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* Slash command autocomplete */}
             {slashMenuOpen && (
@@ -557,25 +372,6 @@ export const Input = ({
                 </div>
               )}
             </div>
-
-            {/* What the prompt box used to say by growing. A capped box hides how much
-                is above the fold, so the size is stated instead of performed, and the
-                way to see all of it is named next to it. */}
-            {input.length >= READOUT_MIN_CHARS && (
-              <div
-                data-slot="prompt-readout"
-                className="mt-1 flex items-center justify-end gap-2 pr-1 font-mono text-[10px] text-muted-foreground/60"
-              >
-                <span>
-                  {visualLines} {visualLines === 1 ? "line" : "lines"} ·{" "}
-                  {formatTokenCount(Math.round(input.length / 4))}
-                </span>
-                <span className="opacity-70">
-                  {navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl"}
-                  ↩ {composerOpen ? "collapses" : "expands"}
-                </span>
-              </div>
-            )}
           </div>
         </PopoverTrigger>
 
@@ -593,25 +389,13 @@ export const Input = ({
             inputRef.current?.focus();
           }}
         >
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50 bg-muted/20">
-            <div className="flex flex-row gap-2 items-center">
-              <span className="flex size-2 rounded-full bg-emerald-400 animate-pulse" />
-              <h3 className="font-semibold text-xs text-foreground/90">
-                {keepEngaged ? "Continuous Conversation" : "Omni Assistant"}
-              </h3>
-              <span className="text-[10px] text-muted-foreground/60 hidden sm:inline">
-                (↑/↓ to scroll)
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex flex-row items-center gap-1.5 mr-2">
-                <span className="text-[10px] text-muted-foreground">{`Conversation`}</span>
-                <span className="text-[10px] text-muted-foreground/70 bg-muted/40 px-1.5 py-0.5 rounded-md border border-input/40 font-mono">
-                  {navigator.platform.toLowerCase().includes("mac")
-                    ? "⌘"
-                    : "Ctrl"}{" "}
-                  K
-                </span>
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border/40 bg-muted/10">
+            <span className="text-xs font-medium text-foreground/80">
+              {keepEngaged ? "Conversation" : "Response"}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 mr-1">
+                <span className="text-[10px] text-muted-foreground/70">Continuous</span>
                 <Switch
                   checked={keepEngaged}
                   onCheckedChange={(checked) => {
@@ -683,41 +467,6 @@ export const Input = ({
                   <div data-hud-response>
                     <AnswerCard response={response} isStreaming={isLoading} />
                   </div>
-                  {!isLoading && (
-                    <div className="flex flex-col gap-2 pt-3 border-t border-border/40 mt-3">
-                      <div className="flex flex-wrap items-center justify-between gap-1.5">
-                        <div className="flex flex-wrap gap-1.5">
-                          {[
-                            "⚡ Caveman",
-                            "✨ Summarize",
-                            "🔍 Explain simpler",
-                            "💻 Show code",
-                            "🐛 Fix bugs",
-                            "📝 Action items",
-                          ].map((pill) => (
-                            <button
-                              key={pill}
-                              type="button"
-                              onClick={() => {
-                                playHapticClick();
-                                const cleanPrompt = pill.replace(/^[^\w\s]+\s*/, "");
-                                setInput(cleanPrompt === "Caveman" ? "Rewrite in caveman ultra mode (max compression, zero fluff)" : cleanPrompt);
-                                setTimeout(() => {
-                                  inputRef.current?.focus();
-                                }, 50);
-                              }}
-                              className="text-[11px] px-2.5 py-1 rounded-full bg-muted/60 hover:bg-primary/10 hover:text-primary hover:border-primary/30 border border-input/40 transition cursor-pointer font-medium select-none"
-                            >
-                              {pill}
-                            </button>
-                          ))}
-                        </div>
-                        <span className="text-[10px] text-muted-foreground/60 font-mono">
-                          ~{Math.round(response.split(/\s+/).length * 1.3)} tokens · {response.split(/\s+/).length} words
-                        </span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
