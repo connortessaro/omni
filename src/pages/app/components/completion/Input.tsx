@@ -323,7 +323,7 @@ export const Input = ({
             {slashMenuOpen && (
               <div
                 data-hud-overlay
-                className="absolute left-0 right-0 top-full mt-2 bg-popover/95 backdrop-blur-md border border-input/60 rounded-xl shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                className="absolute left-0 right-0 bottom-full mb-2 bg-popover/95 backdrop-blur-md border border-input/60 rounded-xl shadow-xl p-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
                 <div className="text-[10px] text-muted-foreground/70 px-2 py-1 font-semibold uppercase tracking-wider">
                   Slash Commands
                 </div>
@@ -403,7 +403,7 @@ export const Input = ({
         {/* Response Panel */}
         <PopoverContent
           align="end"
-          side="bottom"
+          side="top"
           className="w-screen p-0 border border-white/10 shadow-2xl overflow-hidden rounded-2xl bg-popover/90 backdrop-blur-2xl"
           sideOffset={8}
           // The trigger is a plain `div`, so Radix's default focus return lands

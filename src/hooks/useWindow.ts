@@ -42,6 +42,7 @@ const expandedHudHeight = (): number | null => {
   if (!card) return null;
 
   const cardRect = card.getBoundingClientRect();
+  let top = cardRect.top;
   let bottom = cardRect.bottom;
 
   document
@@ -50,26 +51,14 @@ const expandedHudHeight = (): number | null => {
       const rect = wrapper.getBoundingClientRect();
       if (rect.height === 0) return;
 
-      // A popover Radix has flipped upward for want of room sits entirely above the
-      // card's bottom edge, so measuring to its bottom asks for no extra height and the
-      // window never grows: no room below appears, the popover stays flipped, and it is
-      // clipped off the top of a 54px window forever. Asking for the card plus the
-      // popover's own height breaks that loop wherever a popover forgets to opt out of
-      // collision handling.
-      bottom =
-        rect.bottom <= cardRect.bottom
-          ? Math.max(bottom, cardRect.bottom + rect.height)
-          : Math.max(bottom, rect.bottom);
+      top = Math.min(top, rect.top);
+      bottom = Math.max(bottom, rect.bottom);
     });
 
-  // Nothing measurable open yet. This used to ask for the full 600px, which is what
-  // made the window snap open to a third of the screen and then collapse to the
-  // panel's real height a frame later: 600 -> 192 -> back up, on every single
-  // answer. Asking for nothing leaves the window where it is for that one frame,
-  // and the re-measure scheduled by the caller supplies the real height.
-  if (bottom <= cardRect.bottom) return null;
+  const total = bottom - top;
+  if (total <= cardRect.height) return null;
 
-  return clampHudHeight(bottom - cardRect.top);
+  return clampHudHeight(total);
 };
 
 export const useWindowResize = () => {
@@ -186,14 +175,18 @@ export const useHudAutoHeight = (ref: RefObject<HTMLElement | null>) => {
      */
     const contentHeight = (): number => {
       const cardRect = element.getBoundingClientRect();
+      let top = cardRect.top;
       let bottom = cardRect.bottom;
 
       element.querySelectorAll("[data-hud-overlay]").forEach((overlay) => {
         const rect = overlay.getBoundingClientRect();
-        if (rect.height > 0) bottom = Math.max(bottom, rect.bottom);
+        if (rect.height > 0) {
+          top = Math.min(top, rect.top);
+          bottom = Math.max(bottom, rect.bottom);
+        }
       });
 
-      return bottom - cardRect.top;
+      return bottom - top;
     };
 
     const apply = async () => {
