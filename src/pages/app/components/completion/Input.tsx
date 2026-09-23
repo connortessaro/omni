@@ -16,6 +16,7 @@ import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
 import { ProfileChip } from "./ProfileChip";
 import { playHapticClick, formatTokenCount } from "@/lib";
+import { parseAnswer } from "@/lib/assessment";
 
 /** Must fit one line in the narrow HUD, or a textarea wraps and clips it. */
 const PROMPT_PLACEHOLDER = "Ask anything or type /";
@@ -80,6 +81,7 @@ export const Input = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
+  const parsed = useMemo(() => parseAnswer(response), [response]);
 
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -274,9 +276,25 @@ export const Input = ({
                     return;
                   }
 
-                  if (e.key === "Escape" && composerOpen) {
-                    e.preventDefault();
-                    setComposerOpen(false);
+                  if (e.key === "Escape") {
+                    if (composerOpen) {
+                      e.preventDefault();
+                      setComposerOpen(false);
+                      return;
+                    }
+                    if (isPopoverOpen) {
+                      e.preventDefault();
+                      dismissResponse();
+                      return;
+                    }
+                    if (input.trim().length > 0) {
+                      e.preventDefault();
+                      setInput("");
+                      return;
+                    }
+                    try {
+                      invoke("hide_hud");
+                    } catch {}
                     return;
                   }
 
@@ -403,6 +421,9 @@ export const Input = ({
               </span>
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground/70">
                 <span className="inline-flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 font-mono text-indigo-400 font-semibold shadow-xs">⌥C</kbd> Copy
+                </span>
+                <span className="inline-flex items-center gap-1">
                   <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 font-mono text-emerald-400 font-semibold shadow-xs">⌥T</kbd> Type
                 </span>
                 <span className="inline-flex items-center gap-1">
@@ -414,7 +435,7 @@ export const Input = ({
               </div>
             </div>
             <div className="flex items-center gap-1.5">
-              <CopyButton content={response} />
+              {!parsed && <CopyButton content={response} />}
               <AutoTypeButton content={response} />
             </div>
           </div>
@@ -448,18 +469,16 @@ export const Input = ({
                 </div>
               )}
               {response && (
-                <div>
-                  <div data-hud-response>
-                    <AnswerCard response={response} isStreaming={isLoading} />
-                  </div>
+                <div data-hud-response>
+                  <AnswerCard response={response} isStreaming={isLoading} />
                 </div>
               )}
 
               {/* Conversation History - Separate scroll, no auto-scroll */}
               {keepEngaged && conversationHistory.length > 1 && (
                 <div className="space-y-3 pt-3">
-                  {conversationHistory
-                    .sort((a, b) => b?.timestamp - a?.timestamp)
+                  {[...conversationHistory]
+                    .sort((a, b) => (b?.timestamp ?? 0) - (a?.timestamp ?? 0))
                     .map((message, index) => {
                       if (!isLoading && index === 0) {
                         return null;

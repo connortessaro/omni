@@ -12,23 +12,23 @@
 //! If Accessibility permissions are not yet granted, it gracefully falls back to
 //! passive CGEventSourceKeyState polling so the shortcut functions under all circumstances.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+use once_cell::sync::Lazy;
 use tauri::{AppHandle, Manager, Runtime};
 use crate::shortcuts::{handle_screenshot_shortcut, handle_toggle_window};
 
 #[cfg(target_os = "macos")]
 use tauri_nspanel::ManagerExt;
 
+static START_INSTANT: Lazy<Instant> = Lazy::new(Instant::now);
 static LAST_RIGHT_SHIFT_DOWN: AtomicU64 = AtomicU64::new(0);
 static LAST_TRIGGER_TIME: AtomicU64 = AtomicU64::new(0);
 static EVENT_TAP_ACTIVE: AtomicBool = AtomicBool::new(false);
+static TAP_PORT: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
 fn current_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+    START_INSTANT.elapsed().as_millis() as u64
 }
 
 /// Dispatches the context-sensitive Omni action:
@@ -127,18 +127,30 @@ mod macos {
         fn CGEventGetIntegerValueField(event: CGEventRef, field: u32) -> i64;
         fn CGEventGetFlags(event: CGEventRef) -> u64;
         fn CGEventSourceKeyState(state_id: i32, key: u16) -> bool;
+        fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
 
         static kCFRunLoopDefaultMode: *const std::ffi::c_void;
     }
 
-    static mut APP_PTR: *const std::ffi::c_void = std::ptr::null();
+    const K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFFFFFE;
+    const K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFFFFFF;
 
     extern "C" fn event_tap_callback<R: Runtime>(
         _proxy: CGEventTapProxy,
         event_type: u32,
         event: CGEventRef,
-        _refcon: *mut std::ffi::c_void,
+        refcon: *mut std::ffi::c_void,
     ) -> CGEventRef {
+        // Handle macOS automatically disabling event tap on queue stall or timeout
+        if event_type == K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT || event_type == K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT {
+            let port = TAP_PORT.load(Ordering::SeqCst);
+            if !port.is_null() {
+                unsafe { CGEventTapEnable(port, true); }
+                eprintln!("[StealthTap] Re-enabled event tap after WindowServer timeout/disable");
+            }
+            return event;
+        }
+
         if event_type == K_CG_EVENT_FLAGS_CHANGED {
             let keycode = unsafe { CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) };
             if keycode == K_VK_RIGHT_SHIFT {
@@ -151,13 +163,9 @@ mod macos {
                     let delta = now.saturating_sub(last);
 
                     // If double-tap within 350ms, trigger action
-                    if delta > 50 && delta <= 350 {
-                        unsafe {
-                            if !APP_PTR.is_null() {
-                                let app = &*(APP_PTR as *const AppHandle<R>);
-                                dispatch_stealth_action(app);
-                            }
-                        }
+                    if delta > 50 && delta <= 350 && !refcon.is_null() {
+                        let app = unsafe { &*(refcon as *const AppHandle<R>) };
+                        dispatch_stealth_action(app);
                     }
                 }
 
@@ -177,11 +185,8 @@ mod macos {
         thread::spawn(move || {
             let mask = 1u64 << K_CG_EVENT_FLAGS_CHANGED;
             
-            // Box the AppHandle and store static pointer for the C callback
-            let boxed_app = Box::new(app_clone);
-            unsafe {
-                APP_PTR = Box::into_raw(boxed_app) as *const std::ffi::c_void;
-            }
+            // Box the AppHandle and pass safely via refcon pointer
+            let boxed_app = Box::into_raw(Box::new(app_clone)) as *mut std::ffi::c_void;
 
             let tap = unsafe {
                 CGEventTapCreate(
@@ -190,11 +195,12 @@ mod macos {
                     K_CG_EVENT_TAP_OPTION_DEFAULT,
                     mask,
                     event_tap_callback::<R>,
-                    std::ptr::null_mut(),
+                    boxed_app,
                 )
             };
 
             if !tap.is_null() {
+                TAP_PORT.store(tap, Ordering::SeqCst);
                 EVENT_TAP_ACTIVE.store(true, Ordering::SeqCst);
                 eprintln!("[StealthTap] macOS CGEventTap established. Right Shift event swallowing active ✅");
 

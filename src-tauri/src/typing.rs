@@ -1,19 +1,20 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use once_cell::sync::Lazy;
 
-static TYPING_ACTIVE: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
-static CANCEL_TYPING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
+static TYPING_ACTIVE: AtomicBool = AtomicBool::new(false);
+static CANCEL_TYPING: AtomicBool = AtomicBool::new(false);
+
+struct TypingGuard;
+impl Drop for TypingGuard {
+    fn drop(&mut self) {
+        TYPING_ACTIVE.store(false, Ordering::Release);
+    }
+}
 
 #[tauri::command]
 pub async fn cancel_human_typing() -> Result<(), String> {
     CANCEL_TYPING.store(true, Ordering::SeqCst);
     Ok(())
-}
-
-#[tauri::command]
-pub async fn is_human_typing() -> Result<bool, String> {
-    Ok(TYPING_ACTIVE.load(Ordering::SeqCst))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +48,8 @@ pub struct TypingStep {
 }
 
 pub fn get_adjacent_typo(ch: char) -> Option<char> {
-    match ch {
+    let lower = ch.to_ascii_lowercase();
+    let typo_lower = match lower {
         'a' => Some('s'), 'b' => Some('v'), 'c' => Some('x'), 'd' => Some('f'),
         'e' => Some('r'), 'f' => Some('g'), 'g' => Some('h'), 'h' => Some('j'),
         'i' => Some('o'), 'j' => Some('k'), 'k' => Some('l'), 'l' => Some('k'),
@@ -55,6 +57,11 @@ pub fn get_adjacent_typo(ch: char) -> Option<char> {
         'r' => Some('t'), 's' => Some('a'), 't' => Some('y'), 'u' => Some('y'),
         'v' => Some('b'), 'w' => Some('e'), 'x' => Some('c'), 'y' => Some('u'),
         _ => None,
+    }?;
+    if ch.is_ascii_uppercase() {
+        Some(typo_lower.to_ascii_uppercase())
+    } else {
+        Some(typo_lower)
     }
 }
 
@@ -299,14 +306,23 @@ pub async fn simulate_human_typing(text: String, speed_wpm: Option<u32>) -> Resu
     }
     CANCEL_TYPING.store(false, Ordering::SeqCst);
 
-    let result = tokio::task::spawn_blocking(move || {
+    struct AbortOnDrop;
+    impl Drop for AbortOnDrop {
+        fn drop(&mut self) {
+            CANCEL_TYPING.store(true, Ordering::SeqCst);
+        }
+    }
+    let abort_guard = AbortOnDrop;
+
+    let res = tokio::task::spawn_blocking(move || {
+        let _guard = TypingGuard;
         macos::run_typing(text, speed_wpm.unwrap_or(100))
     })
     .await
     .map_err(|e| e.to_string())?;
 
-    TYPING_ACTIVE.store(false, Ordering::SeqCst);
-    result
+    std::mem::forget(abort_guard);
+    res
 }
 
 #[cfg(not(target_os = "macos"))]

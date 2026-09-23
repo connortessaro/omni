@@ -36,6 +36,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
@@ -403,6 +404,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
+  // Computed all AI providers (memoized to prevent continuous IPC migration loops)
+  const allAiProviders = useMemo<TYPE_PROVIDER[]>(
+    () => [...AI_PROVIDERS, ...customAiProviders],
+    [customAiProviders]
+  );
+
+  // Computed all STT providers
+  const allSttProviders = useMemo<TYPE_PROVIDER[]>(
+    () => [...SPEECH_TO_TEXT_PROVIDERS, ...customSttProviders],
+    [customSttProviders]
+  );
+
   // Check if the current AI provider/model supports images
   useEffect(() => {
     const checkImageSupport = () => {
@@ -419,7 +432,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
 
     checkImageSupport();
-  }, [selectedAIProvider.provider]);
+  }, [selectedAIProvider.provider, allAiProviders]);
 
   // Sync selected AI to localStorage. Credentials are stripped on the way out;
   // persistSelectedProvider is the only writer of these keys.
@@ -436,18 +449,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       selectedSttProvider
     );
   }, [selectedSttProvider]);
-
-  // Computed all AI providers
-  const allAiProviders: TYPE_PROVIDER[] = [
-    ...AI_PROVIDERS,
-    ...customAiProviders,
-  ];
-
-  // Computed all STT providers
-  const allSttProviders: TYPE_PROVIDER[] = [
-    ...SPEECH_TO_TEXT_PROVIDERS,
-    ...customSttProviders,
-  ];
 
   // Credentials belong in the OS credential store, not localStorage. Runs on
   // every provider change so a key entered in Dev space lands there too, then
@@ -576,8 +577,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loadData();
   };
 
-  // Create the context value (extend IContextType accordingly)
-  const value: IContextType = {
+  // Create the context value (memoized to prevent re-render cascades across subscribers)
+  const value = useMemo<IContextType>(() => ({
     systemPrompt,
     setSystemPrompt,
     allAiProviders,
@@ -600,7 +601,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setCursorType,
     supportsImages,
     setSupportsImages,
-  };
+  }), [
+    systemPrompt,
+    allAiProviders,
+    customAiProviders,
+    selectedAIProvider,
+    onSetSelectedAIProvider,
+    allSttProviders,
+    customSttProviders,
+    selectedSttProvider,
+    onSetSelectedSttProvider,
+    screenshotConfiguration,
+    setScreenshotConfiguration,
+    customizable,
+    toggleAppIconVisibility,
+    toggleAlwaysOnTop,
+    toggleAutostart,
+    loadData,
+    selectedAudioDevices,
+    setSelectedAudioDevices,
+    supportsImages,
+    setSupportsImages,
+  ]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };

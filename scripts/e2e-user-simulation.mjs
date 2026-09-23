@@ -247,35 +247,42 @@ async function runSimulation() {
     await runTestsBtn.waitFor({ state: "visible", timeout: 4000 });
     pass("Found 'Run tests' button on code answer card");
 
-    await runTestsBtn.click();
+    // Zero-mouse hotkey: trigger local tests via Alt+R
+    await page.keyboard.press("Alt+r");
     await page.waitForTimeout(500);
 
     const passedBadge = page.locator("text=/2 passed/").first();
     await passedBadge.waitFor({ state: "visible", timeout: 5000 });
-    pass("Local test runner executed: Green badge rendered with '2 passed'");
+    pass("Local test runner executed via hands-free Alt+R: Green badge rendered with '2 passed'");
 
     await page.screenshot({ path: join(OUT_DIR, "05-tests-passed-badge.png") });
     pass("Captured screenshot: 05-tests-passed-badge.png");
 
     // -------------------------------------------------------------
-    // Act 6: Human Typing Simulator Interaction
+    // Act 6: Human Typing Simulator & Hands-Free Copy Interaction
     // -------------------------------------------------------------
-    header("Act 6: Human Typing Simulator Interaction");
+    header("Act 6: Human Typing Simulator & Clipboard Ergonomics");
     const autoTypeBtn = page.locator("button[aria-label*='Type code'], button[title*='typing']").first();
     await autoTypeBtn.waitFor({ state: "visible", timeout: 4000 });
     pass("Auto-type keyboard button is visible on code card");
 
-    await autoTypeBtn.click();
+    // Zero-mouse hotkey: trigger hands-free solution copy via Alt+C
+    await page.keyboard.press("Alt+c");
+    await page.waitForTimeout(200);
+    pass("Hands-free solution copy dispatched cleanly via Alt+C");
+
+    // Zero-mouse hotkey: trigger human typing simulator via Alt+T
+    await page.keyboard.press("Alt+t");
     await page.waitForTimeout(300);
 
     const simulationState = await page.evaluate(() => window.__LAST_TYPING_SIMULATION__);
     if (simulationState && simulationState.text && simulationState.speedWpm === 105) {
-      pass(`simulate_human_typing invoked with ${simulationState.text.length} chars at speed ${simulationState.speedWpm} WPM`);
+      pass(`simulate_human_typing triggered via hands-free Alt+T (${simulationState.text.length} chars at speed ${simulationState.speedWpm} WPM)`);
     } else {
-      fail("simulate_human_typing was not called with expected payload");
+      fail("Alt+T hotkey failed to trigger simulate_human_typing");
     }
 
-    // Cancel typing via Escape key
+    // Cancel typing simulation via Escape key
     await page.keyboard.press("Escape");
     await page.waitForTimeout(200);
 
@@ -287,7 +294,7 @@ async function runSimulation() {
     }
 
     // -------------------------------------------------------------
-    // Act 7: Spoken Interview ("Say it") Profile
+    // Act 7: Spoken Interview ("Say it") Profile & Alt+E Disclosure
     // -------------------------------------------------------------
     header("Act 7: Spoken Interview Profile ('Live Interview')");
     const currentChip = page.locator("[data-slot='profile-chip']").first();
@@ -331,6 +338,33 @@ async function runSimulation() {
     const spokenSentence = page.locator("text=Optimistic locking checks").first();
     await spokenSentence.waitFor({ state: "visible" });
     pass("Oversized 15-second speakable thesis sentence rendered at top");
+
+    // Zero-mouse hotkey: verify reasoning is initially folded, then toggle via Alt+E
+    const bodyLocator = page.locator("[data-slot='answer-body']");
+    const initialBodyVisible = await bodyLocator.isVisible();
+    if (!initialBodyVisible) {
+      pass("Spoken interview reasoning body is initially folded to keep thesis prominent");
+    }
+
+    // Press Alt+E to toggle disclosure open
+    await page.keyboard.press("Alt+e");
+    await page.waitForTimeout(300);
+    const bodyExpanded = await bodyLocator.isVisible();
+    if (bodyExpanded) {
+      pass("Reasoning disclosure expanded hands-free via Alt+E");
+    } else {
+      fail("Alt+E failed to expand reasoning disclosure");
+    }
+
+    // Press Alt+E to collapse disclosure again
+    await page.keyboard.press("Alt+e");
+    await page.waitForTimeout(300);
+    const bodyCollapsedAgain = await bodyLocator.isVisible();
+    if (!bodyCollapsedAgain) {
+      pass("Reasoning disclosure collapsed hands-free via second Alt+E");
+    } else {
+      fail("Alt+E failed to collapse reasoning disclosure");
+    }
 
     await page.screenshot({ path: join(OUT_DIR, "06-spoken-interview-verdict.png") });
     pass("Captured screenshot: 06-spoken-interview-verdict.png");

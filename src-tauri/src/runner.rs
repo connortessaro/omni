@@ -181,28 +181,32 @@ pub async fn run_code(
     entry: String,
     timeout_ms: Option<u64>,
 ) -> Result<RunResult, String> {
-    let (program, extra_args) = interpreter_for(&language)
-        .ok_or_else(|| format!("no runner for `{language}`. Supported: python, javascript, typescript"))?;
+    tokio::task::spawn_blocking(move || {
+        let (program, extra_args) = interpreter_for(&language)
+            .ok_or_else(|| format!("no runner for `{language}`. Supported: python, javascript, typescript"))?;
 
-    if files.is_empty() {
-        return Err("nothing to run: the answer contained no code files".into());
-    }
-    if !files.iter().any(|file| file.path == entry) {
-        return Err(format!("entry `{entry}` is not one of the files to run"));
-    }
+        if files.is_empty() {
+            return Err("nothing to run: the answer contained no code files".into());
+        }
+        if !files.iter().any(|file| file.path == entry) {
+            return Err(format!("entry `{entry}` is not one of the files to run"));
+        }
 
-    let timeout = Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).min(MAX_TIMEOUT_MS));
+        let timeout = Duration::from_millis(timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS).min(MAX_TIMEOUT_MS));
 
-    let root = std::env::temp_dir().join(format!("omni-run-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir_all(&root).map_err(|e| format!("Failed to create run directory: {e}"))?;
+        let root = std::env::temp_dir().join(format!("omni-run-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).map_err(|e| format!("Failed to create run directory: {e}"))?;
 
-    let outcome = run_in(&root, program, extra_args, &files, &entry, timeout);
+        let outcome = run_in(&root, program, extra_args, &files, &entry, timeout);
 
-    // Best effort: a failure to clean up is not worth failing a run the user is waiting
-    // on, and the directory is under the OS temp root either way.
-    let _ = std::fs::remove_dir_all(&root);
+        // Best effort: a failure to clean up is not worth failing a run the user is waiting
+        // on, and the directory is under the OS temp root either way.
+        let _ = std::fs::remove_dir_all(&root);
 
-    outcome
+        outcome
+    })
+    .await
+    .map_err(|e| format!("Runner task joined with error: {e}"))?
 }
 
 fn run_in(

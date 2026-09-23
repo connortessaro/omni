@@ -227,14 +227,14 @@ export const useHudAutoHeight = (ref: RefObject<HTMLElement | null>) => {
     };
     trackOverlays();
 
-    // An overlay mounting or unmounting leaves the card's own size untouched,
-    // so a ResizeObserver alone never hears about it.
-    // An overlay slides in with a transform, and a rect reflects that transform,
-    // so a measurement taken the moment it mounts reads a box still in motion.
-    // Re-measure on the next frame and again when the animation finishes.
+    let scheduledRaf = false;
     const applySoon = () => {
-      void apply();
-      requestAnimationFrame(() => void apply());
+      if (scheduledRaf) return;
+      scheduledRaf = true;
+      requestAnimationFrame(() => {
+        scheduledRaf = false;
+        void apply();
+      });
     };
 
     const treeObserver = new MutationObserver(() => {
@@ -247,7 +247,7 @@ export const useHudAutoHeight = (ref: RefObject<HTMLElement | null>) => {
     element.addEventListener("animationend", onAnimationEnd, true);
     element.addEventListener("transitionend", onAnimationEnd, true);
 
-    applySoon();
+    void apply();
 
     return () => {
       sizeObserver.disconnect();

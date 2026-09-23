@@ -560,7 +560,7 @@ pub async fn request_system_audio_access(app: AppHandle) -> Result<(), String> {
 }
 
 // VAD Configuration Management
-#[tauri::command]
+#[allow(dead_code)]
 pub async fn get_vad_config(app: AppHandle) -> Result<VadConfig, String> {
     let state = app.state::<crate::AudioState>();
     let config = state
@@ -590,7 +590,7 @@ pub async fn update_vad_config(app: AppHandle, config: VadConfig) -> Result<(), 
     Ok(())
 }
 
-#[tauri::command]
+#[allow(dead_code)]
 pub async fn get_capture_status(app: AppHandle) -> Result<bool, String> {
     let state = app.state::<crate::AudioState>();
     let is_capturing = *state
@@ -600,7 +600,7 @@ pub async fn get_capture_status(app: AppHandle) -> Result<bool, String> {
     Ok(is_capturing)
 }
 
-#[tauri::command]
+#[allow(dead_code)]
 pub fn get_audio_sample_rate(_app: AppHandle) -> Result<u32, String> {
     let input = SpeakerInput::new().map_err(|e| {
         error!("Failed to create speaker input: {}", e);

@@ -35,7 +35,7 @@ fi
 export APPLE_SIGNING_IDENTITY="$OMNI_SIGNING_IDENTITY"
 echo "Signing as: $APPLE_SIGNING_IDENTITY"
 
-npm --prefix "$REPO_ROOT" run tauri -- build "$@"
+npm --prefix "$REPO_ROOT" run tauri -- build --bundles app "$@"
 
 APP="$REPO_ROOT/src-tauri/target/release/bundle/macos/Omni.app"
 if [[ -d "$APP" ]]; then

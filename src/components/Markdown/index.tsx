@@ -21,7 +21,7 @@ export function Markdown({
         table: true,
         code: true,
         mermaid: {
-          download: true,
+          download: false,
           copy: true,
           fullscreen: false,
           panZoom: false,
@@ -49,7 +49,7 @@ const COMPONENTS = {
     return (
       <a
         href={href}
-        className="text-gray-600 underline underline-offset-2 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100 cursor-pointer"
+        className="text-gray-600 underline underline-offset-2 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100 cursor-pointer rounded-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
         onClick={handleClick}
         {...props}
       >

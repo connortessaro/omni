@@ -20,7 +20,7 @@ function PopoverTrigger({
       {...props}
       className={cn(
         props.className,
-        "data-[state=open]:bg-primary-foreground data-[state=open]:text-primary data-[state=open]:border-primary/20 data-[state=open]:border-1 transition-all duration-300"
+        "data-[state=open]:bg-primary-foreground data-[state=open]:text-primary data-[state=open]:border-primary/20 data-[state=open]:border transition-all duration-300"
       )}
     />
   );

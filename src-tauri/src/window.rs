@@ -119,7 +119,7 @@ pub fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     show_dashboard_window(&app)
 }
 
-#[tauri::command]
+#[allow(dead_code)]
 pub fn toggle_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(dashboard_window) = app.get_webview_window("dashboard") {
         match dashboard_window.is_visible() {
@@ -150,7 +150,7 @@ pub fn toggle_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[allow(dead_code)]
 pub fn move_window(app: tauri::AppHandle, direction: String, step: i32) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         let current_pos = window

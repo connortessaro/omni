@@ -3,24 +3,93 @@ import { Keyboard, Square } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 
+import { parseAnswer } from "@/lib/assessment";
+
 interface AutoTypeButtonProps {
   content: string;
 }
 
+interface ExtractedBlock {
+  lang: string;
+  code: string;
+}
+
+function parseCodeBlocks(markdown: string): ExtractedBlock[] {
+  const lines = markdown.split(/\r?\n/);
+  const blocks: ExtractedBlock[] = [];
+  let openFence: { char: string; len: number; lang: string } | null = null;
+  let currentLines: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fenceMatch = /^[ \t]*(`{3,}|~{3,})(.*)$/.exec(line);
+
+    if (openFence) {
+      if (
+        fenceMatch &&
+        fenceMatch[1][0] === openFence.char &&
+        fenceMatch[1].length >= openFence.len
+      ) {
+        blocks.push({
+          lang: openFence.lang,
+          code: currentLines.join("\n"),
+        });
+        openFence = null;
+        currentLines = [];
+      } else {
+        currentLines.push(line);
+      }
+    } else if (fenceMatch) {
+      const char = fenceMatch[1][0];
+      const len = fenceMatch[1].length;
+      const info = fenceMatch[2].trim();
+      const lang = info.split(/\s+/)[0]?.toLowerCase() || "";
+      openFence = { char, len, lang };
+      currentLines = [];
+    }
+  }
+
+  // Gracefully recover unclosed code block (e.g. streaming or malformed markdown)
+  if (openFence && currentLines.length > 0) {
+    blocks.push({
+      lang: openFence.lang,
+      code: currentLines.join("\n"),
+    });
+  }
+
+  return blocks;
+}
+
 export function extractCodeToType(markdown: string): string {
   if (!markdown) return "";
-  
-  // Find all fenced code blocks (```lang\n...\n```)
-  const codeBlockRegex = /```[a-zA-Z0-9_-]*\n([\s\S]*?)```/g;
-  const matches = [...markdown.matchAll(codeBlockRegex)];
-  
-  if (matches.length > 0) {
-    // Join extracted code blocks with a double newline
-    return matches.map((m) => m[1].trimEnd()).join("\n\n");
+
+  // 1. If this is a structured Omni assessment with an ```omni contract, use its clean body
+  const parsed = parseAnswer(markdown);
+  const targetMarkdown = parsed ? parsed.body : markdown;
+
+  // 2. Parse fenced code blocks with support for nested fences, CRLF, info strings, and language identifiers
+  const blocks = parseCodeBlocks(targetMarkdown);
+
+  // 3. Filter out 'omni' contract blocks
+  const nonOmni = blocks.filter((b) => b.lang !== "omni");
+
+  // 4. Filter out test-runner checks so test harness assertions aren't typed into online coding platforms.
+  // Uses word boundaries and delimiter checks so variables like 'assertion_count' or words like 'assertive' are safely preserved.
+  const isTestHarness = (code: string): boolean =>
+    /(^|\n)\s*(assert(\s+|\(|\.)|pytest\b|console\.assert\b|unittest\b)/.test(code);
+
+  const solutionBlocks = nonOmni.filter((b) => !isTestHarness(b.code));
+
+  // If test filtering left solution blocks, use them. If all blocks matched (e.g. defensive assertion inside
+  // solution or standalone test query), keep the non-omni blocks rather than falling back to prose.
+  const targetBlocks = solutionBlocks.length > 0 ? solutionBlocks : nonOmni;
+
+  if (targetBlocks.length > 0) {
+    return targetBlocks.map((b) => b.code.trimEnd()).join("\n\n");
   }
-  
-  // If no fenced code blocks, return the raw markdown content
-  return markdown.trim();
+
+  // Fallback: If no pure solution block was found, return raw body without omni fence
+  return targetMarkdown.replace(/```omni[\s\S]*?```/g, "").trim();
 }
 
 export function AutoTypeButton({ content }: AutoTypeButtonProps) {

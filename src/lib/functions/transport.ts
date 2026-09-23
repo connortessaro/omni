@@ -66,6 +66,10 @@ export async function* streamProviderRequest({
   upload,
   signal,
 }: ProviderRequestParams): AsyncIterable<string> {
+  if (signal?.aborted) {
+    return;
+  }
+
   const requestId = nextRequestId();
 
   // Chunks arrive on a channel callback, which has to be adapted into something
@@ -88,6 +92,7 @@ export async function* streamProviderRequest({
 
   const onAbort = () => {
     void invoke("provider_request_cancel", { requestId }).catch(() => {});
+    wake();
   };
   signal?.addEventListener("abort", onAbort, { once: true });
 
@@ -105,18 +110,19 @@ export async function* streamProviderRequest({
 
   try {
     while (true) {
+      if (signal?.aborted) return;
       while (pending.length > 0) {
         if (signal?.aborted) return;
         yield pending.shift() as string;
       }
-      if (finished) break;
+      if (finished || signal?.aborted) break;
       await new Promise<void>((resolve) => {
         notify = resolve;
       });
     }
 
     await completed;
-    if (failure) throw failure;
+    if (failure && !signal?.aborted) throw failure;
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }

@@ -60,8 +60,6 @@ pub fn run() {
             window::set_window_height,
             runner::run_code,
             window::open_dashboard,
-            window::toggle_dashboard,
-            window::move_window,
             capture::capture_to_base64,
             capture::start_screen_capture,
             capture::capture_selected_area,
@@ -72,6 +70,7 @@ pub fn run() {
             shortcuts::validate_shortcut_key,
             shortcuts::set_app_icon_visibility,
             shortcuts::set_always_on_top,
+            shortcuts::hide_hud,
             shortcuts::exit_app,
             secrets::secret_store,
             secrets::secret_delete,
@@ -83,14 +82,10 @@ pub fn run() {
             speaker::manual_stop_continuous,
             speaker::check_system_audio_access,
             speaker::request_system_audio_access,
-            speaker::get_vad_config,
             speaker::update_vad_config,
-            speaker::get_capture_status,
-            speaker::get_audio_sample_rate,
             speaker::get_output_devices,
             typing::simulate_human_typing,
             typing::cancel_human_typing,
-            typing::is_human_typing,
         ])
         .setup(|app| {
             // Setup main window positioning

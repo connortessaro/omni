@@ -86,6 +86,7 @@ where
         .to_string();
 
     if !missing.is_empty() {
+        missing.sort();
         missing.dedup();
         return Err(format!(
             "No stored value for {}. Add it in Dev space.",
@@ -122,6 +123,7 @@ where
     });
 
     if !wrong_destination.is_empty() {
+        wrong_destination.sort();
         wrong_destination.dedup();
         return Err(format!(
             "Refusing to send {} to {}: it is bound to a different origin.",

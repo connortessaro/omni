@@ -42,7 +42,7 @@ const registeredCommands = () => {
 /** Commands the frontend calls, with where it calls them. */
 const invokedCommands = () => {
   const found = new Map();
-  const pattern = /\binvoke\s*(?:<[^>]*>)?\s*\(\s*["'`]([^"'`]+)["'`]/g;
+  const pattern = /\binvoke(?:<[^()]*>)?\s*\(\s*["'`]([^"'`]+)["'`]/g;
 
   for (const file of walk(SRC)) {
     if (!/\.(ts|tsx)$/.test(file)) continue;

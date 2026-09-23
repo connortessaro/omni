@@ -17,4 +17,3 @@ export const Completion = ({ isHidden }: { isHidden: boolean }) => {
   );
 };
 
-export { QuickModelSwitcher } from "./QuickModelSwitcher";

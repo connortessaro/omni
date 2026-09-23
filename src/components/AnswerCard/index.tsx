@@ -137,9 +137,11 @@ const Verdict = ({
     answer.shape !== "choice" && answer.shape !== "speak"
   );
 
+  const allBlocks = useMemo(() => collectCodeBlocks(answer.body), [answer.body]);
+
   const blocks = useMemo(
-    () => collectCodeBlocks(answer.body).filter((block) => block.path),
-    [answer.body]
+    () => allBlocks.filter((block) => block.path),
+    [allBlocks]
   );
 
   const jumpTo = useCallback((index: number) => {
@@ -158,11 +160,22 @@ const Verdict = ({
     answer.shape === "prose" ||
     answer.shape === "speak" ||
     answer.shape === "diagram";
-  const copyPayload = copiesHeadline
-    ? answer.headline
-    : collectCodeBlocks(answer.body)[0]?.code || answer.headline;
+  const primaryCode = allBlocks[0]?.code ?? "";
+  const copyPayload = copiesHeadline ? answer.headline : (primaryCode || answer.headline);
 
   const headlineIsShort = answer.headline.length <= HEADLINE_BIG_LIMIT;
+
+  // Alt+E keyboard shortcut to expand/collapse reasoning hands-free
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === "e" || e.key === "E") && answer.body) {
+        e.preventDefault();
+        setShowBody((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [answer.body]);
 
   // Only offered when there is something a local interpreter can actually run. An answer
   // in SQL or Java gets no button rather than a button that fails on click.
@@ -380,24 +393,27 @@ const Verdict = ({
         </ul>
       )}
 
-      {answer.body && (answer.shape === "choice" || answer.shape === "speak") && (
+      {answer.body && (answer.shape === "choice" || answer.shape === "speak" || !showBody) && (
         <button
           type="button"
           data-slot="answer-body-toggle"
           onClick={() => setShowBody((open) => !open)}
           aria-expanded={showBody}
-          className="flex w-fit cursor-pointer items-center gap-1 rounded-md text-[11px] font-medium text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md text-[11px] font-medium text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {showBody ? (
             <ChevronDown className="size-3" aria-hidden="true" />
           ) : (
             <ChevronRight className="size-3" aria-hidden="true" />
           )}
-          {showBody
-            ? "Hide the rest"
-            : answer.shape === "speak"
-            ? "If they follow up"
-            : "Show reasoning"}
+          <span>
+            {showBody
+              ? "Hide the rest"
+              : answer.shape === "speak"
+              ? "If they follow up"
+              : "Show reasoning"}
+          </span>
+          <kbd className="px-1 py-0.5 rounded bg-muted/60 border border-white/10 text-[9px] font-mono text-muted-foreground">⌥E</kbd>
         </button>
       )}
 

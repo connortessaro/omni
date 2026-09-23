@@ -53,7 +53,7 @@ const ProfileOption = ({
     role="option"
     aria-selected={active}
     onClick={onSelect}
-    className={`flex w-full cursor-pointer items-start justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left transition ${
+    className={`flex w-full cursor-pointer items-start justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
       active ? "bg-primary/15" : "hover:bg-primary/10"
     }`}
   >

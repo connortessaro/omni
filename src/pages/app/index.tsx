@@ -5,13 +5,13 @@ import {
 import {
   SystemAudio,
   Completion,
-  QuickModelSwitcher,
   AudioVisualizer,
   StatusIndicator,
 } from "./components";
 import { useApp, useHudAutoHeight } from "@/hooks";
 import { useApp as useAppContext } from "@/contexts";
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { ErrorBoundary } from "react-error-boundary";
 import { ErrorLayout } from "@/layouts";
 import { getPlatform } from "@/lib";
@@ -23,6 +23,26 @@ const App = () => {
   const hudRef = useRef<HTMLDivElement>(null);
 
   useHudAutoHeight(hudRef);
+
+  // Zero-mouse hands-free HUD dismiss via Escape key
+  useEffect(() => {
+    const handleGlobalKeyDown = async (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (e.defaultPrevented) return;
+        // If a popover or dialog is open, let Radix handle dismissal
+        const openOverlay = document.querySelector(
+          '[data-state="open"]:not([data-slot="card"])'
+        );
+        if (openOverlay) return;
+
+        try {
+          await invoke("hide_hud");
+        } catch {}
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   return (
     <ErrorBoundary
@@ -74,6 +94,10 @@ const App = () => {
                 <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 text-[10px] font-mono text-cyan-400 font-semibold shadow-xs">⇧⇧</kbd>
                 <span>Snap & Solve</span>
               </div>
+              <div className="flex items-center gap-1.5" title="Press Alt + C to copy solution/answer to clipboard">
+                <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 text-[10px] font-mono text-indigo-400 font-semibold shadow-xs">⌥C</kbd>
+                <span>Copy</span>
+              </div>
               <div className="flex items-center gap-1.5" title="Press Alt + T to simulate human typing into active window">
                 <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 text-[10px] font-mono text-emerald-400 font-semibold shadow-xs">⌥T</kbd>
                 <span>Auto-Type</span>
@@ -86,9 +110,6 @@ const App = () => {
                 <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 text-[10px] font-mono text-muted-foreground font-semibold shadow-xs">Esc</kbd>
                 <span>Hide</span>
               </div>
-            </div>
-            <div className="hidden" aria-hidden="true">
-              <QuickModelSwitcher />
             </div>
           </div>
         </Card>

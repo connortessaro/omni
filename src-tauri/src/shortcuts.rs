@@ -340,6 +340,32 @@ fn handle_system_audio_shortcut<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// Tauri command to hide the HUD window/panel (hands-free Escape key dismiss)
+#[tauri::command]
+pub fn hide_hud<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(panel) = app.get_webview_panel("main") {
+            if panel.is_visible() {
+                panel.order_out(None);
+            }
+            return Ok(());
+        }
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "windows")]
+        {
+            let state = app.state::<WindowVisibility>();
+            if let Ok(mut is_hidden) = state.is_hidden.lock() {
+                *is_hidden = true;
+            }
+            let _ = window.emit("toggle-window-visibility", true);
+        }
+        let _ = window.hide();
+    }
+    Ok(())
+}
+
 /// Tauri command to get all registered shortcuts
 #[tauri::command]
 pub fn get_registered_shortcuts<R: Runtime>(
