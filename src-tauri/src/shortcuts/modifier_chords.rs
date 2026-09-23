@@ -121,6 +121,7 @@ pub(super) fn start<R: Runtime>(app: AppHandle<R>) {
                 if !chord.update(&pressed, *left, *right) {
                     continue;
                 }
+                eprintln!("[Chords] {} fired", key);
                 for (action, _) in bound.iter().filter(|(_, bound_key)| bound_key == key) {
                     dispatch(&app, action);
                 }
