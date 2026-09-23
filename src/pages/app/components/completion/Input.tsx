@@ -4,15 +4,14 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-  Button,
   ScrollArea,
   Textarea,
   Markdown,
-  Switch,
   CopyButton,
   AutoTypeButton,
   AnswerCard,
 } from "@/components";
+import { invoke } from "@tauri-apps/api/core";
 import { UseCompletionReturn } from "@/types";
 import { MessageHistory } from "./MessageHistory";
 import { ProfileChip } from "./ProfileChip";
@@ -47,6 +46,7 @@ const SLASH_COMMANDS = [
   { command: "/regex", description: "Explain or build regex", example: "/regex <pattern>" },
   { command: "/solve", description: "Work step by step, using tools", example: "/solve <problem>" },
   { command: "/answer", description: "Answer an assessment question", example: "/answer [question]" },
+  { command: "/settings", description: "Open Omni Settings & Space", example: "/settings" },
   { command: "/clear", description: "Clear conversation", example: "/clear" },
 ];
 
@@ -57,7 +57,6 @@ const slashOptionId = (command: string) => `slash-command-${command.slice(1)}`;
 export const Input = ({
   isPopoverOpen,
   isLoading,
-  reset,
   dismissResponse,
   input,
   setInput,
@@ -70,12 +69,10 @@ export const Input = ({
   setMessageHistoryOpen,
   error,
   response,
-  cancel,
   scrollAreaRef,
   inputRef,
   isHidden,
   keepEngaged,
-  setKeepEngaged,
   contextBlocks,
   removeContextBlock,
   historyNotice,
@@ -122,7 +119,16 @@ export const Input = ({
   }, [activeCommandIndex, slashMenuOpen]);
 
   const acceptCommand = useCallback(
-    (command: string) => {
+    async (command: string) => {
+      if (command === "/settings") {
+        setInput("");
+        try {
+          await invoke("open_dashboard");
+        } catch (err) {
+          console.error("Failed to open settings dashboard:", err);
+        }
+        return;
+      }
       setInput(command + (command === "/clear" ? "" : " "));
       inputRef.current?.focus();
     },
@@ -391,48 +397,25 @@ export const Input = ({
           }}
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-border/40 bg-muted/10">
-            <span className="text-xs font-medium text-foreground/80">
-              {keepEngaged ? "Conversation" : "Response"}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <div className="flex items-center gap-1.5 mr-1">
-                <span className="text-[10px] text-muted-foreground/70">Continuous</span>
-                <Switch
-                  checked={keepEngaged}
-                  onCheckedChange={(checked) => {
-                    setKeepEngaged(checked);
-                    setTimeout(() => {
-                      inputRef?.current?.focus();
-                    }, 100);
-                  }}
-                />
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-foreground/90">
+                {keepEngaged ? "Conversation" : "Solution"}
+              </span>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground/70">
+                <span className="inline-flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 font-mono text-emerald-400 font-semibold shadow-xs">⌥T</kbd> Type
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 font-mono text-amber-400 font-semibold shadow-xs">⌥R</kbd> Test
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted/60 border border-white/10 font-mono text-muted-foreground font-semibold shadow-xs">Esc</kbd> Hide
+                </span>
               </div>
+            </div>
+            <div className="flex items-center gap-1.5">
               <CopyButton content={response} />
               <AutoTypeButton content={response} />
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => {
-                  if (isLoading) {
-                    cancel();
-                  } else if (keepEngaged) {
-                    setKeepEngaged(false);
-                    startNewConversation();
-                  } else {
-                    reset();
-                  }
-                }}
-                className="cursor-pointer hover:bg-destructive/10 hover:text-destructive size-7 transition-colors rounded-lg"
-                title={
-                  isLoading
-                    ? "Cancel loading"
-                    : keepEngaged
-                    ? "Close and start new conversation"
-                    : "Clear conversation (Esc)"
-                }
-              >
-                <XIcon className="size-3.5" />
-              </Button>
             </div>
           </div>
 

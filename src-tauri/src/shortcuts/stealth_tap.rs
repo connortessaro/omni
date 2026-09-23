@@ -95,7 +95,6 @@ mod macos {
     const NX_SHIFTMASK: u64 = 0x00020000; // Bit 17 in flags
 
     #[link(name = "CoreGraphics", kind = "framework")]
-    #[link(name = "CoreFoundation", kind = "framework")]
     extern "C" {
         fn CGEventTapCreate(
             tap: u32,

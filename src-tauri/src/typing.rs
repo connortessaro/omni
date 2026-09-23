@@ -81,6 +81,64 @@ mod macos {
         let chars: Vec<char> = text.chars().collect();
         let mut pseudo_rng: u64 = 123456789;
 
+        // Helper to get an adjacent QWERTY typo character
+        let get_adjacent_typo = |ch: char| -> Option<char> {
+            match ch {
+                'a' => Some('s'), 'b' => Some('v'), 'c' => Some('x'), 'd' => Some('f'),
+                'e' => Some('r'), 'f' => Some('g'), 'g' => Some('h'), 'h' => Some('j'),
+                'i' => Some('o'), 'j' => Some('k'), 'k' => Some('l'), 'l' => Some('k'),
+                'm' => Some('n'), 'n' => Some('m'), 'o' => Some('p'), 'p' => Some('o'),
+                'r' => Some('t'), 's' => Some('a'), 't' => Some('y'), 'u' => Some('y'),
+                'v' => Some('b'), 'w' => Some('e'), 'x' => Some('c'), 'y' => Some('u'),
+                _ => None,
+            }
+        };
+
+        let post_unicode_char = |ch: char, pseudo_rng: u64| {
+            let mut utf16_buf = [0u16; 2];
+            let encoded = ch.encode_utf16(&mut utf16_buf);
+
+            unsafe {
+                // Key Down
+                let event_down = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0, true);
+                if !event_down.is_null() {
+                    CGEventKeyboardSetUnicodeString(event_down, encoded.len() as u32, encoded.as_ptr());
+                    CGEventPost(K_CG_HID_EVENT_TAP, event_down);
+                    CFRelease(event_down);
+                }
+
+                // Dwell time: key is pressed down for 10-25ms before releasing
+                let dwell_time = 15 + (pseudo_rng % 15);
+                sleep(Duration::from_millis(dwell_time));
+
+                // Key Up
+                let event_up = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0, false);
+                if !event_up.is_null() {
+                    CGEventKeyboardSetUnicodeString(event_up, encoded.len() as u32, encoded.as_ptr());
+                    CGEventPost(K_CG_HID_EVENT_TAP, event_up);
+                    CFRelease(event_up);
+                }
+            }
+        };
+
+        // Emit backspace key event (virtual keycode 0x33 / 51 on macOS)
+        let post_backspace = |pseudo_rng: u64| {
+            unsafe {
+                let event_down = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0x33, true);
+                if !event_down.is_null() {
+                    CGEventPost(K_CG_HID_EVENT_TAP, event_down);
+                    CFRelease(event_down);
+                }
+                let dwell_time = 15 + (pseudo_rng % 15);
+                sleep(Duration::from_millis(dwell_time));
+                let event_up = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0x33, false);
+                if !event_up.is_null() {
+                    CGEventPost(K_CG_HID_EVENT_TAP, event_up);
+                    CFRelease(event_up);
+                }
+            }
+        };
+
         for (idx, &ch) in chars.iter().enumerate() {
             if CANCEL_TYPING.load(Ordering::SeqCst) {
                 break;
@@ -100,37 +158,30 @@ mod macos {
                 char_delay += 30; // Slight pause between words
             }
 
-            // Post key down and key up events with Unicode character
-            let mut utf16_buf = [0u16; 2];
-            let encoded = ch.encode_utf16(&mut utf16_buf);
-
-            unsafe {
-                // Key Down
-                let event_down = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0, true);
-                if !event_down.is_null() {
-                    CGEventKeyboardSetUnicodeString(event_down, encoded.len() as u32, encoded.as_ptr());
-                    CGEventPost(K_CG_HID_EVENT_TAP, event_down);
-                    CFRelease(event_down);
-                }
-
-                // Dwell time: key is pressed down for 10-25ms before releasing
-                let dwell_time = (15 + (pseudo_rng % 15)) as u64;
-                sleep(Duration::from_millis(dwell_time));
-
-                // Key Up
-                let event_up = CGEventCreateKeyboardEvent(std::ptr::null_mut(), 0, false);
-                if !event_up.is_null() {
-                    CGEventKeyboardSetUnicodeString(event_up, encoded.len() as u32, encoded.as_ptr());
-                    CGEventPost(K_CG_HID_EVENT_TAP, event_up);
-                    CFRelease(event_up);
+            // Realistic human typo simulation:
+            // ~1.5% chance to mis-hit an adjacent key, pause, backspace, and type correctly
+            let should_typo = (pseudo_rng % 65) == 0 && ch.is_alphabetic() && idx > 5;
+            if should_typo {
+                if let Some(wrong_char) = get_adjacent_typo(ch) {
+                    // Type the wrong character
+                    post_unicode_char(wrong_char, pseudo_rng);
+                    // Reaction time noticing typo: 90-140ms
+                    sleep(Duration::from_millis(90 + (pseudo_rng % 50)));
+                    // Hit backspace
+                    post_backspace(pseudo_rng);
+                    // Small hesitation before correct key: 70-120ms
+                    sleep(Duration::from_millis(70 + (pseudo_rng % 50)));
                 }
             }
+
+            // Type the intended character
+            post_unicode_char(ch, pseudo_rng);
 
             sleep(Duration::from_millis(char_delay));
 
             // Occasional micro-pause every 40-70 characters (simulating reading ahead)
             if idx > 0 && idx % 50 == 0 {
-                sleep(Duration::from_millis(250 + ((pseudo_rng % 200) as u64)));
+                sleep(Duration::from_millis(250 + (pseudo_rng % 200)));
             }
         }
 

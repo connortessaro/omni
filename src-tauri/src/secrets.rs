@@ -22,7 +22,6 @@ use url::Url;
 /// containing a placeholder, and Rust would stamp the real key onto it. Binding
 /// means a placeholder only resolves when the request is going where the secret
 /// belongs.
-
 const SERVICE: &str = "com.connortessaro.omni";
 
 /// `{{OMNI_SECRET:API_KEY}}`
@@ -148,6 +147,7 @@ pub fn inject_secrets_for(
 }
 
 /// True when the text carries at least one placeholder.
+#[allow(dead_code)]
 pub fn has_placeholder(text: &str) -> bool {
     SECRET_PLACEHOLDER.is_match(text)
 }

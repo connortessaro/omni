@@ -108,7 +108,7 @@ pub fn run() {
 
             let app_handle = app.handle();
             if app_handle.get_webview_window("dashboard").is_none() {
-                if let Err(e) = window::create_dashboard_window(&app_handle) {
+                if let Err(e) = window::create_dashboard_window(app_handle) {
                     eprintln!("Failed to pre-create dashboard window on startup: {}", e);
                 }
             }

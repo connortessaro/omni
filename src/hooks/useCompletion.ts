@@ -249,6 +249,17 @@ export const useCompletion = () => {
         return;
       }
 
+      // Handle /settings slash command
+      if (trimmedInput === "/settings") {
+        setState((prev) => ({ ...prev, input: "" }));
+        try {
+          await invoke("open_dashboard");
+        } catch (err) {
+          console.error("Failed to open settings dashboard:", err);
+        }
+        return;
+      }
+
       // Expand slash commands. A bare command falls back to attached context
       // when there is any, so the clipboard and file chips drive them.
       const argFor = (command: string): string =>

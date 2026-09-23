@@ -9,7 +9,6 @@ import {
 import {
   Cpu,
   Check,
-  Sparkles,
   HardDrive,
   Wifi,
   RefreshCw,
@@ -148,10 +147,10 @@ export const QuickModelSwitcher = () => {
           type="button"
           data-slot="model-switcher"
           title="Switch AI Engine"
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-muted/40 hover:bg-primary/15 border border-white/10 hover:border-primary/40 text-muted-foreground hover:text-foreground transition-all cursor-pointer select-none"
+          className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium bg-muted/30 hover:bg-muted/60 border border-white/5 hover:border-white/10 text-muted-foreground hover:text-foreground transition-all cursor-pointer select-none"
         >
-          <Sparkles className="size-3 text-cyan-400 animate-pulse" />
-          <span className="max-w-[100px] truncate text-[11px] font-semibold text-foreground/90">
+          <span className="size-1.5 rounded-full bg-emerald-400/80 shrink-0" />
+          <span className="max-w-[90px] truncate text-[11px] font-medium text-foreground/80">
             {displayName}
           </span>
         </button>

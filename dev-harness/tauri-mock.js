@@ -213,6 +213,25 @@
       return null;
     },
 
+    simulate_human_typing: (args) => {
+      window.__LAST_TYPING_SIMULATION__ = { ...args, timestamp: Date.now() };
+      return new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 5000);
+        window.__CANCEL_TYPING_RESOLVER__ = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+      });
+    },
+    cancel_human_typing: () => {
+      window.__TYPING_CANCELLED__ = true;
+      if (window.__CANCEL_TYPING_RESOLVER__) {
+        window.__CANCEL_TYPING_RESOLVER__();
+      }
+      return null;
+    },
+    is_human_typing: () => false,
+
     // The credential store has no browser equivalent. Reporting "stored" by
     // default is truthful for the request path: the proxy really does hold the
     // key, and the chat probes depend on getting past the pre-flight check.

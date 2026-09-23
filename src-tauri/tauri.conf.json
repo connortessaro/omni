@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "Omni - AI Assistant",
+        "title": "System Helper",
         "width": 1200,
         "height": 54,
         "decorations": false,

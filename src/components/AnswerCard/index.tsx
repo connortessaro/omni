@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -190,6 +190,18 @@ const Verdict = ({
     }
   }, [plan, running]);
 
+  // Hands-free hotkey: Alt+R triggers the local test runner
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === "r" || e.key === "R") && plan && !running) {
+        e.preventDefault();
+        startRun();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [plan, running, startRun]);
+
   return (
     <div data-slot="answer-card" className="flex flex-col gap-3">
       <div
@@ -287,6 +299,7 @@ const Verdict = ({
             data-slot="answer-run-button"
             onClick={startRun}
             disabled={running}
+            title="Run tests locally before submitting (Alt+R)"
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-input/40 bg-muted/40 px-2 py-1 text-[11px] font-medium transition hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60"
           >
             {running ? (
